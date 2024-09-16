@@ -1,8 +1,8 @@
 version: 2
 updates:
-  - package-ecosystem: "gradle"
+  - package-ecosystem: "npm"
     directory: "/"
     schedule:
       interval: "weekly"
     ignore:
-      - dependency-type: "development"
+      - dependency-name: "some-dependency"  # Required field for the ignored dependency
