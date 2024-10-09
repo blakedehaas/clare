@@ -18,7 +18,7 @@ batch_size = 4096
 num_epochs = 2
 max_lr = 3e-4
 model_name = 'ff2_2'
-eval_every = 1
+eval_every_step = 500
 log_every_step = 100
 
 input_columns = ['ILAT', 'GLAT', 'GMLT', 'AL_index', 'SYM_H', 'f107_index']
@@ -136,15 +136,16 @@ for epoch in range(num_epochs):
                 "learning_rate": scheduler.get_last_lr()[0],
                 "total_steps": total_steps
             })
+        
+        if total_steps % eval_every_step == 0:
+            test_loss = evaluate_model(model, eval_loader, criterion)
+            wandb.log({
+                "test_loss": test_loss,
+                "total_steps": total_steps
+            })
 
     avg_train_loss = epoch_loss / len(train_loader)
-    test_loss = evaluate_model(model, eval_loader, criterion)
-    
-    # Log train and test loss to wandb
-    wandb.log({
-        "epoch": epoch,
-        "test_loss": test_loss
-    })
+
     if (epoch + 1) % eval_every == 0:
         print(f'Epoch [{epoch+1}/{num_epochs}], Avg Train Loss: {avg_train_loss:.4f}, Test Loss: {test_loss:.4f}')
 
