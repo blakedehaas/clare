@@ -15,11 +15,11 @@ import utils
 
 # Hyperparameters
 batch_size = 4096
-num_epochs = 2
-max_lr = 3e-4
+num_epochs = 1
+max_lr = 5e-5
 model_name = 'ff2_2'
-eval_every_step = 500
-log_every_step = 100
+eval_every_step = 250
+log_every_step = 10
 
 input_columns = ['ILAT', 'GLAT', 'GMLT', 'AL_index', 'SYM_H', 'f107_index']
 output_column = 'Te1'
@@ -104,7 +104,6 @@ def evaluate_model(model, data_loader, criterion):
 # Training loop
 total_steps = 0
 for epoch in range(num_epochs):
-    epoch_loss = 0
     model.train()
     for i, (x, y) in enumerate(tqdm(train_loader)):
         x = x.to("cuda")
@@ -125,8 +124,6 @@ for epoch in range(num_epochs):
         
         # Step the scheduler
         scheduler.step()
-
-        epoch_loss += loss.item()
         total_steps += 1
 
         # Log train loss and learning rate every log_every_step iterations
@@ -143,11 +140,22 @@ for epoch in range(num_epochs):
                 "test_loss": test_loss,
                 "total_steps": total_steps
             })
+    print(f'Epoch [{epoch+1}/{num_epochs}]')
 
-    avg_train_loss = epoch_loss / len(train_loader)
+    # Log epoch-level metrics
+    wandb.log({
+        "epoch": epoch + 1
+    })
 
-    if (epoch + 1) % eval_every == 0:
-        print(f'Epoch [{epoch+1}/{num_epochs}], Avg Train Loss: {avg_train_loss:.4f}, Test Loss: {test_loss:.4f}')
+# Evaluate the model at the end of training
+test_loss = evaluate_model(model, eval_loader, criterion)
+print(f'Final Test Loss: {test_loss:.4f}')
+
+# Log final test loss
+wandb.log({
+    "test_loss": test_loss,
+    "total_steps": total_steps
+})
 
 print('Training finished!')
 
