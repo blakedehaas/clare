@@ -2,7 +2,7 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 
 # Read the data
-file_path = '../data/Akebono_combined.tsv'
+file_path = '../data/akebono_solar_combined_filtered.tsv'
 df = pd.read_csv(file_path, sep='\t')
 
 # Split into train+val and test sets
@@ -17,9 +17,9 @@ print(f"Validation set size: {len(val)}")
 print(f"Test set size: {len(test)}")
 
 # Save datasets to separate files
-train.to_csv('../data/train.tsv', sep='\t', index=False)
-val.to_csv('../data/validation.tsv', sep='\t', index=False)
-test.to_csv('../data/test.tsv', sep='\t', index=False)
+train.to_csv('../data/train_v3.tsv', sep='\t', index=False)
+val.to_csv('../data/validation_v3.tsv', sep='\t', index=False)
+test.to_csv('../data/test_v3.tsv', sep='\t', index=False)
 
 print("Datasets saved to separate tsv files in the 'data' directory.")
 
