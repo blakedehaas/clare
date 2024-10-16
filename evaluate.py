@@ -28,7 +28,7 @@ test_df = pd.read_csv('data/test_v4.tsv', sep='\t')
 test_df = test_df[columns_to_keep]
 
 # Load means and std from json file
-with open(f'data/{model_name}_norm_stats.json', 'w') as f:
+with open(f'data/{model_name}_norm_stats.json', 'r') as f:
     norm_stats = json.load(f)
 
 means = norm_stats['mean']
