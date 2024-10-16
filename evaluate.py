@@ -101,3 +101,9 @@ plt.tight_layout()
 # Save the plot
 plt.savefig('deviation.png')
 plt.close()  # Close the figure to free up memory
+
+# Print some predictions and targets
+print("\nSample predictions and targets:")
+num_samples = 5
+for i in range(num_samples):
+    print(f"Prediction: {predictions[i]:.2f}, Target: {true_values[i]:.2f}, Deviation: {deviations[i]:.2f}")
