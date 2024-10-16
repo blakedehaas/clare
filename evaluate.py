@@ -4,12 +4,13 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader
 from models.gaussian import GaussianNetwork
-from models.feed_forward import FF_1Network, FF_2Network
+from models.feed_forward import FF_1Network, FF_2Network, FF_3Network
 from models.transformer import TransformerRegressor
 import utils
 import json
 import matplotlib.pyplot as plt
 
+model_name = 'ff3_1_0'
 input_columns = ['ILAT', 'GLAT', 'GMLT', 'AL_index', 'SYM_H', 'f107_index']
 output_column = 'Te1'
 columns_to_keep = input_columns + [output_column]
@@ -19,15 +20,15 @@ columns_to_normalize = ['ILAT', 'GLAT', 'GMLT', 'AL_index', 'SYM_H', 'f107_index
 input_size = len(input_columns)
 hidden_size = 2048
 output_size = 1
-model = FF_2Network(input_size, hidden_size, output_size).to("cuda")
-model.load_state_dict(torch.load('ff2_2.pth'))
+model = FF_3Network(input_size, hidden_size, output_size).to("cuda")
+model.load_state_dict(torch.load('ff3_1_0.pth'))
 model.eval()  # Set the model to evaluation mode
 
-test_df = pd.read_csv('data/test_v3.tsv', sep='\t')
+test_df = pd.read_csv('data/test_v4.tsv', sep='\t')
 test_df = test_df[columns_to_keep]
 
 # Load means and std from json file
-with open('data/v3_norm_stats.json', 'r') as f:
+with open(f'data/{model_name}_norm_stats.json', 'w') as f:
     norm_stats = json.load(f)
 
 means = norm_stats['mean']
