@@ -1,0 +1,28 @@
+program: timeseries_cross_validation.py
+method: bayes
+metric:
+  goal: minimize
+  name: validation_loss
+parameters:
+  hidden_size:
+    distribution: int_uniform
+    min: 1024
+    max: 4096
+  num_epochs:
+    values: [10, 20, 30, 40]
+    distribution: categorical
+  batch_size:
+    values: [2048, 4096, 8192]
+    distribution: categorical
+  max_lr:
+    distribution: log_uniform_values
+    min: 0.0005
+    max: 0.002
+  weight_decay:
+    distribution: log_uniform_values
+    min: 1e-6
+    max: 1e-4
+  dropout_rate:
+    distribution: uniform
+    min: 0.0
+    max: 0.5
