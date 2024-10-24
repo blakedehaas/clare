@@ -12,17 +12,19 @@ import numpy as np
 import wandb
 from models.feed_forward import FF_2Network, FF_4Network, FF_5Network
 import utils
-
+from datasets import Dataset
 # Hyperparameters
 batch_size = 512
 num_epochs = 1
 max_lr = 1e-4
-model_name = '1_10'
+model_name = '1_16'
 log_every_step = 10
 
 input_columns = ['Altitude', 'GCLAT', 'GCLON', 'ILAT', 'GLAT', 'GMLT', 'XXLAT', 'XXLON', 'AL_index', 'SYM_H', 'Mag_Scalar_B', 'exists_Mag_Scalar_B', 'Mag_Vector_B', 'exists_Mag_Vector_B', 'Mag_B_Lat_GSE', 'exists_Mag_B_Lat_GSE', 'Mag_B_Long_GSE', 'exists_Mag_B_Long_GSE', 'Mag_BX_GSE', 'exists_Mag_BX_GSE', 'Mag_BY_GSE', 'exists_Mag_BY_GSE', 'Mag_BZ_GSE', 'exists_Mag_BZ_GSE', 'Mag_BY_GSM', 'exists_Mag_BY_GSM', 'Mag_BZ_GSM', 'exists_Mag_BZ_GSM', 'Mag_RMS_Mag', 'exists_Mag_RMS_Mag', 'Mag_RMS_Vector', 'exists_Mag_RMS_Vector', 'Mag_RMS_BX_GSE', 'exists_Mag_RMS_BX_GSE', 'Mag_RMS_BY_GSE', 'exists_Mag_RMS_BY_GSE', 'Mag_RMS_BZ_GSE', 'exists_Mag_RMS_BZ_GSE', 'Plasma_SW_Temp', 'exists_Plasma_SW_Temp', 'Plasma_SW_Density', 'exists_Plasma_SW_Density', 'Plasma_SW_Speed', 'exists_Plasma_SW_Speed', 'Plasma_SW_Flow_Long', 'exists_Plasma_SW_Flow_Long', 'Plasma_SW_Flow_Lat', 'exists_Plasma_SW_Flow_Lat', 'Plasma_Alpha_Prot_Ratio', 'exists_Plasma_Alpha_Prot_Ratio', 'Plasma_Sigma_T', 'exists_Plasma_Sigma_T', 'Plasma_Sigma_N', 'exists_Plasma_Sigma_N', 'Plasma_Sigma_V', 'exists_Plasma_Sigma_V', 'Plasma_Sigma_Phi_V', 'exists_Plasma_Sigma_Phi_V', 'Plasma_Sigma_Theta_V', 'exists_Plasma_Sigma_Theta_V', 'Plasma_Sigma_Ratio', 'exists_Plasma_Sigma_Ratio', 'Solar_Kp', 'exists_Solar_Kp', 'Solar_R_Sunspot', 'exists_Solar_R_Sunspot', 'Solar_Dst', 'exists_Solar_Dst', 'Solar_Ap', 'exists_Solar_Ap', 'Solar_AE', 'exists_Solar_AE', 'Solar_AL', 'exists_Solar_AL', 'Solar_AU', 'exists_Solar_AU', 'Solar_PC', 'exists_Solar_PC', 'Solar_Lyman_Alpha', 'exists_Solar_Lyman_Alpha', 'Particle_Proton_Flux_1MeV', 'exists_Particle_Proton_Flux_1MeV', 'Particle_Proton_Flux_2MeV', 'exists_Particle_Proton_Flux_2MeV', 'Particle_Proton_Flux_4MeV', 'exists_Particle_Proton_Flux_4MeV', 'Particle_Proton_Flux_10MeV', 'exists_Particle_Proton_Flux_10MeV', 'Particle_Proton_Flux_30MeV', 'exists_Particle_Proton_Flux_30MeV', 'Particle_Proton_Flux_60MeV', 'exists_Particle_Proton_Flux_60MeV', 'Particle_Flux_Flag', 'BSN_X_GSE', 'exists_BSN_X_GSE', 'BSN_Y_GSE', 'exists_BSN_Y_GSE', 'BSN_Z_GSE', 'exists_BSN_Z_GSE', 'AE_index', 'exists_AE_index', 'AU_index', 'exists_AU_index', 'SYM_D', 'exists_SYM_D', 'ASY_D', 'exists_ASY_D', 'ASY_H', 'exists_ASY_H', 'PCN_index', 'exists_PCN_index', 'f107_index']
 output_column = ['Te1']
-train_df = pd.read_csv('data/akebono_solar_combined_v3_experiment_more_indices_train.tsv', sep='\t')
+loaded_train_dataset = Dataset.load_from_disk("data/akebono_solar_combined_v3_experiment_more_indices_train")
+train_df = loaded_train_dataset.to_pandas()
+# train_df = pd.read_csv('data/akebono_solar_combined_v3_experiment_more_indices_train.tsv', sep='\t')
 eval_df = pd.read_csv('data/akebono_solar_combined_v3_experiment_more_indices_val.tsv', sep='\t')
 
 # Keep only input and output columns
@@ -33,6 +35,9 @@ eval_df = eval_df[columns_to_keep]
 # Normalize all location and atmospheric parameters (mean = 0 and std dev = 1)
 columns_to_normalize = input_columns + output_column
 columns_to_normalize = [col for col in columns_to_normalize if 'exists_' not in col]
+
+train_df["Te1"] = np.log(train_df["Te1"])
+eval_df["Te1"] = np.log(eval_df["Te1"])
 
 # Calculate mean and std for the specified columns across combined dataset
 means, stds = utils.calculate_stats(train_df, columns_to_normalize)
@@ -48,6 +53,7 @@ eval_df_norm = utils.normalize_df(eval_df, means, stds, columns_to_normalize)
 # Verify there are no NaNs in the normalized DataFrame
 assert train_df_norm[columns_to_normalize].isna().sum().sum() == 0, "NaN values found in normalized data"
 assert eval_df_norm[columns_to_normalize].isna().sum().sum() == 0, "NaN values found in normalized data"
+
 # Set up data loader
 train_ds = utils.DataFrameDataset(train_df_norm, input_columns, output_column)
 eval_ds = utils.DataFrameDataset(eval_df_norm, input_columns, output_column)
@@ -60,14 +66,14 @@ eval_loader = DataLoader(eval_ds, batch_size=batch_size, shuffle=False, num_work
 # Initialize the model
 input_size = len(input_columns)
 hidden_size = 2048
-output_size = 1
+output_size = 80
 model = FF_2Network(input_size, hidden_size, output_size).to("cuda")
 # Calculate and print total trainable parameters
 total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 print(f"Total trainable parameters: {total_params:,}")
 
 # Define loss function and optimizer
-criterion = nn.MSELoss()
+criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr=max_lr)
 
 # Implement One Cycle LR

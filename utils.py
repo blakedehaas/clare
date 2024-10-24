@@ -1,22 +1,18 @@
 import torch
 from torch.utils.data import Dataset
 import numpy as np
+import pandas as pd
+
 class DataFrameDataset(Dataset):
     def __init__(self, dataframe, input_columns, output_column):
         self.X = torch.tensor(dataframe[input_columns].values, dtype=torch.float32)
-        self.y = torch.tensor(dataframe[output_column].values, dtype=torch.float32).reshape(-1, 1)
+        # Values
+        # self.y = torch.tensor(dataframe[output_column].values, dtype=torch.float32).reshape(-1, 1)
+        # Bins
+        # self.y = torch.tensor((dataframe[output_column].values // 200).clip(0, 299), dtype=torch.long).squeeze()
+        self.y = torch.tensor(((dataframe[output_column].values - 6) // 0.05).clip(0, 79), dtype=torch.long).squeeze()
+        # self.y = torch.tensor(((dataframe[output_column].values + 3) // 0.05).clip(0, 139), dtype=torch.long).squeeze()
 
-        # # Create a tensor of zeros with shape (num_samples, 200)
-        # self.y = torch.zeros((len(dataframe), 200), dtype=torch.float32)
-        
-        # # Calculate the bin index for each value
-        # bin_indices = (dataframe[output_column].values // 100).astype(int)
-        
-        # # Clip the bin indices to ensure they're within the valid range (0-199)
-        # bin_indices = np.clip(bin_indices, 0, 199)
-        
-        # # Set the corresponding bin to 1 for each sample
-        # self.y[np.arange(len(dataframe)), bin_indices] = 1.0
         
     def __len__(self):
         return len(self.X)
@@ -73,9 +69,10 @@ class SamplingDataset(Dataset):
 
 # Function to calculate mean and std dev for specified columns
 def calculate_stats(df, columns):
-    means = df[columns].mean()
-    stds = df[columns].std()
-    return means, stds
+    data = df[columns].values
+    means = np.mean(data, axis=0)
+    stds = np.std(data, axis=0)
+    return pd.Series(means, index=columns), pd.Series(stds, index=columns)
 
 # Function to normalize specified columns in the DataFrame
 def normalize_df(df, means, stds, columns):
