@@ -10,8 +10,8 @@ class DataFrameDataset(Dataset):
         # self.y = torch.tensor(dataframe[output_column].values, dtype=torch.float32).reshape(-1, 1)
         # Bins
         # self.y = torch.tensor((dataframe[output_column].values // 200).clip(0, 299), dtype=torch.long).squeeze()
-        self.y = torch.tensor(((dataframe[output_column].values - 6) // 0.05).clip(0, 79), dtype=torch.long).squeeze()
         # self.y = torch.tensor(((dataframe[output_column].values + 3) // 0.05).clip(0, 139), dtype=torch.long).squeeze()
+        # self.y = torch.tensor(((dataframe[output_column].values - 6) // 0.05).clip(0, 79), dtype=torch.long).squeeze()
 
         
     def __len__(self):
