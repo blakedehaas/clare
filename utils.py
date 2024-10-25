@@ -6,13 +6,7 @@ import pandas as pd
 class DataFrameDataset(Dataset):
     def __init__(self, dataframe, input_columns, output_column):
         self.X = torch.tensor(dataframe[input_columns].values, dtype=torch.float32)
-        # Values
-        # self.y = torch.tensor(dataframe[output_column].values, dtype=torch.float32).reshape(-1, 1)
-        # Bins
-        # self.y = torch.tensor((dataframe[output_column].values // 200).clip(0, 299), dtype=torch.long).squeeze()
-        # self.y = torch.tensor(((dataframe[output_column].values + 3) // 0.05).clip(0, 139), dtype=torch.long).squeeze()
-        # self.y = torch.tensor(((dataframe[output_column].values - 6) // 0.05).clip(0, 79), dtype=torch.long).squeeze()
-
+        self.y = torch.tensor(dataframe[output_column].values, dtype=torch.float32).reshape(-1, 1)
         
     def __len__(self):
         return len(self.X)
@@ -67,13 +61,29 @@ class SamplingDataset(Dataset):
         # Return the sampled data point
         return self.X[sample_idx], self.y[sample_idx]
 
-# Function to calculate mean and std dev for specified columns
 def calculate_stats(df, columns):
+    # Norm without invalids
+    # # Convert DataFrame to NumPy array for faster operations
+    # data = df[columns].values.astype(np.float64)
+    
+    # # Define invalid values
+    # invalid_values = np.array([999.9, 9.999, 9999.0, 9999.99, 99999.99, 99999.99, 9999999, 9999999.0])
+    
+    # # Create a mask for valid values
+    # mask = ~np.isin(data, invalid_values)
+    
+    # # Calculate means and stds using NumPy masked operations
+    # means = np.ma.masked_array(data, ~mask).mean(axis=0)
+    # stds = np.ma.masked_array(data, ~mask).std(axis=0)
+    # means_dict = dict(zip(columns, means.tolist()))
+    # stds_dict = dict(zip(columns, stds.tolist()))
+    # return means_dict, stds_dict
     data = df[columns].values
     means = np.mean(data, axis=0)
     stds = np.std(data, axis=0)
-    return pd.Series(means, index=columns), pd.Series(stds, index=columns)
-
+    means_dict = dict(zip(columns, means))
+    stds_dict = dict(zip(columns, stds))
+    return means_dict, stds_dict
 # Function to normalize specified columns in the DataFrame
 def normalize_df(df, means, stds, columns):
     df[columns] = (df[columns] - means) / stds

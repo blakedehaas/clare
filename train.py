@@ -17,7 +17,7 @@ from datasets import Dataset
 batch_size = 512
 num_epochs = 1
 max_lr = 1e-4
-model_name = '1_19'
+model_name = '1_21'
 log_every_step = 10
 
 input_columns =['Altitude',
@@ -327,15 +327,29 @@ eval_df = eval_df[columns_to_keep]
 columns_to_normalize = input_columns
 columns_to_normalize = [col for col in columns_to_normalize if 'exists_' not in col]
 
+# Log transform the output
 train_df["Te1"] = np.log(train_df["Te1"])
 eval_df["Te1"] = np.log(eval_df["Te1"])
+
+# Define invalid values
+invalid_values = [999.9, 9.999, 9999.0, 9999.99, 99999.99, 9999999, 9999999.0]
+def replace_invalid(x):
+    return 0 if x in invalid_values else x
+train_df = train_df.replace(invalid_values, 0)
+eval_df = eval_df.replace(invalid_values, 0)
+
+# Verify that invalid values have been replaced
+assert not train_df.isin(invalid_values).any().any(), "Invalid values still present in train_df"
+assert not eval_df.isin(invalid_values).any().any(), "Invalid values still present in eval_df"
+
+print("Invalid values have been replaced with 0 in both train_df and eval_df.")
 
 # Calculate mean and std for the specified columns across combined dataset
 means, stds = utils.calculate_stats(train_df, columns_to_normalize)
 
 # Save stats to a JSON file
 with open(f'data/{model_name}_norm_stats.json', 'w') as f:
-    json.dump({'mean': means.to_dict(), 'std': stds.to_dict()}, f)
+    json.dump({'mean': means, 'std': stds}, f)
 
 # Normalize train and eval datasets using the combined stats
 train_df_norm = utils.normalize_df(train_df, means, stds, columns_to_normalize)
@@ -351,8 +365,19 @@ eval_ds = utils.DataFrameDataset(eval_df_norm, input_columns, output_column)
 # train_ds = utils.SamplingDataset(train_df_norm, input_columns, output_column, sampling_ratios=[0.2, 0.2, 0.2, 0.4])
 # eval_ds = utils.DataFrameDataset(eval_df_norm, input_columns, output_column)
 
-train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=os.cpu_count())
-eval_loader = DataLoader(eval_ds, batch_size=batch_size, shuffle=False, num_workers=os.cpu_count())
+def custom_collate(batch):
+    inputs = [item[0] for item in batch]
+    targets = [item[1] for item in batch]
+    targets = torch.stack(targets)
+    inputs = torch.stack(inputs)
+    targets = ((targets - 6) // 0.05).clamp(0, 79).long().squeeze()
+    # self.y = torch.tensor((dataframe[output_column].values // 200).clip(0, 299), dtype=torch.long).squeeze()
+    # self.y = torch.tensor(((dataframe[output_column].values + 3) // 0.05).clip(0, 139), dtype=torch.long).squeeze()
+    # self.y = torch.tensor(((dataframe[output_column].values - 6) // 0.05).clip(0, 79), dtype=torch.long).squeeze()
+    return inputs, targets
+
+train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=os.cpu_count(), collate_fn=custom_collate)
+eval_loader = DataLoader(eval_ds, batch_size=batch_size, shuffle=False, num_workers=os.cpu_count(), collate_fn=custom_collate)
 
 # Initialize the model
 input_size = len(input_columns)
