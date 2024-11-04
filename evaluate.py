@@ -73,9 +73,9 @@ predictions, true_values = [], []
 
 with torch.no_grad():
     for batch in tqdm(test_loader, desc="Evaluating"):
-        x = batch["input_ids"].to("cuda")
-        y = batch["label"].to("cuda")
-        
+        x = torch.stack(batch["input_ids"]).to(torch.float32).permute(1,0).to("cuda")
+        y = torch.stack(batch["label"]).permute(1,0).to("cuda")
+
         # Forward pass
         if model.__class__.__name__ == 'GaussianNetwork':
             y_pred, var = model(x)
