@@ -77,7 +77,6 @@ input_size = len(input_columns)
 hidden_size = 2048
 output_size = 80
 model = FF_2Network(input_size, hidden_size, output_size).to("cuda")
-# Calculate and print total trainable parameters
 total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 print(f"Total trainable parameters: {total_params:,}")
 
