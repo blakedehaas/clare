@@ -1,0 +1,72 @@
+#!/bin/bash
+#PBS -N auroral_precip_ml_test
+#PBS -A UCUL0008
+#PBS -l select=1:ncpus=4:ngpus=2:mem=64GB
+#PBS -l walltime=24:00:00
+#PBS -q casper
+#PBS -j oe
+#PBS -m abe
+#PBS -M blake.dehaas@lasp.colorado.edu
+
+# Navigate to the directory from which the job was submitted
+cd "$PBS_O_WORKDIR" || { echo "[ERROR] Failed to change directory to \$PBS_O_WORKDIR."; exit 1; }
+
+echo "[INFO] Job started on host: $(hostname)"
+echo "[INFO] Current working directory: $(pwd)"
+echo "[INFO] GPU Information:"
+nvidia-smi
+
+# Define a timestamp for the current run
+TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
+
+# Create a unique output directory for this run
+RUN_OUTPUT_DIR="run_output_${TIMESTAMP}"
+mkdir -p "$RUN_OUTPUT_DIR" || { echo "[ERROR] Failed to create run output directory."; exit 1; }
+
+echo "[INFO] Run output directory created: $RUN_OUTPUT_DIR"
+
+# Redirect PBS stdout and stderr to log files within the run output directory
+exec > >(tee -a "$RUN_OUTPUT_DIR/job_stdout_${TIMESTAMP}.log") 2> >(tee -a "$RUN_OUTPUT_DIR/job_stderr_${TIMESTAMP}.log" >&2)
+
+# Define the path to your Python script
+SCRIPT_PATH="./TestSuite.py"
+
+# Path to the dataset
+DATA_PATH="/glade/campaign/univ/ucul0008/auroral_precipitation_ml/Data/Dataset v3.0/combined_time_dataset.tsv"
+
+# Verify that the script exists
+if [ ! -f "$SCRIPT_PATH" ]; then
+    echo "[ERROR] TestSuite.py not found at path: $SCRIPT_PATH"
+    exit 1
+fi
+
+# Verify that the dataset exists
+if [ ! -f "$DATA_PATH" ]; then
+    echo "[ERROR] Dataset not found at path: $DATA_PATH"
+    exit 1
+fi
+
+# Run your Python script with the necessary command-line arguments
+echo "[INFO] Starting TestSuite.py execution."
+python3.10 "$SCRIPT_PATH" \
+    --batch_size 64 \
+    --dropout 0.2 \
+    --hidden_size 64 \
+    --max_lr 1e-3 \
+    --num_epochs 5 \
+    --weight_decay 0.01 \
+    --patience 3 \
+    --seq_length 24 \
+    --data_path "$DATA_PATH" \
+    --subset_fraction 0.1 \
+    --output_dir "$RUN_OUTPUT_DIR" | tee -a "$RUN_OUTPUT_DIR/TestSuite_${TIMESTAMP}.log"
+
+# Check if the Python script executed successfully
+if [ $? -ne 0 ]; then
+    echo "[ERROR] TestSuite.py execution failed. Check $RUN_OUTPUT_DIR/job_stderr_${TIMESTAMP}.log for details."
+    exit 1
+else
+    echo "[INFO] TestSuite.py executed successfully."
+fi
+
+echo "[INFO] Job completed at $(date)" | tee -a "$RUN_OUTPUT_DIR/job_stdout_${TIMESTAMP}.log"
