@@ -29,7 +29,7 @@ def print_rows_removed(before_count, after_df, step_description, column_to_check
     print("\n")
     return after_count
 
-akebono_file_path = '../data/Akebono_combined.tsv'
+akebono_file_path = '../../data/Akebono_combined.tsv'
 df = pd.read_csv(akebono_file_path, sep='\t')
 
 # Convert DateFormatted to datetime
@@ -84,7 +84,7 @@ if 'SYM_H' not in filtered_df.columns:
 # filtered_df['DateTimeFormatted'] = pd.to_datetime(filtered_df['DateTimeFormatted'], format='%Y-%m-%d %H:%M:%S')
 
 # # Read the single OMNI data file
-# omni_file_path = '../data/omni_magnetic_plasma_solar/omni2_K1CK9l7koS.lst'
+# omni_file_path = '../../data/omni_magnetic_plasma_solar/omni2_K1CK9l7koS.lst'
 
 # # Define column names
 # columns = [
@@ -197,7 +197,7 @@ filtered_df.set_index('DateTimeFormatted', inplace=True)
 
 # # More 1 min data
 # # Read all .lst files from the directory
-# file_list = glob.glob('../data/omni_1min/*.txt')
+# file_list = glob.glob('../../data/omni_1min/*.txt')
 
 # df_list = []
 
@@ -259,7 +259,7 @@ filtered_df.set_index('DateTimeFormatted', inplace=True)
 
 # SYMH
 # Read all .lst files from the directory
-file_list = glob.glob('../data/omni_al_index_symh/*.lst')
+file_list = glob.glob('../../data/omni_al_index_symh/*.lst')
 
 df_list = []
 
@@ -325,7 +325,7 @@ if missing_al.any() or missing_sym_h.any():
 # -----------------------------------
 # F 107 Index
 # -----------------------------------
-f107_file_list = glob.glob('../data/omni_f107/*.lst')
+f107_file_list = glob.glob('../../data/omni_f107/*.lst')
 f107_list = []
 
 for file in f107_file_list:
@@ -391,7 +391,7 @@ for i in tqdm(range(num_chunks)):
     
     # Save the dataset as a separate shard
     dataset.save_to_disk(
-        f'../data/akebono_solar_combined_v6_chu_train/chunk_{i:03d}',
+        f'../../data/akebono_solar_combined_v6_chu_train/chunk_{i:03d}',
         num_shards=1
     )
 print(f"Train dataset saved in {num_chunks} separate chunks.")
@@ -401,7 +401,7 @@ val_dataset = datasets.Dataset.from_pandas(val)
 test_dataset = datasets.Dataset.from_pandas(test)
 
 # Save validation and test datasets to disk
-val_dataset.save_to_disk('../data/akebono_solar_combined_v6_chu_val')
-test_dataset.save_to_disk('../data/akebono_solar_combined_v6_chu_test')
+val_dataset.save_to_disk('../../data/akebono_solar_combined_v6_chu_val')
+test_dataset.save_to_disk('../../data/akebono_solar_combined_v6_chu_test')
 
 print("Validation and test datasets converted to Hugging Face datasets.")
