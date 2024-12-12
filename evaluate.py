@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 import os
 from datasets import Dataset
 import utils
+import scipy
 
 
 model_name = '1_24'
@@ -58,10 +59,7 @@ with torch.no_grad():
         y = batch["label"].to("cuda")
 
         # Forward pass
-        if model.__class__.__name__ == 'GaussianNetwork':
-            y_pred, var = model(x)
-        else:
-            y_pred = model(x)
+        y_pred = model(x)
 
         y_pred = torch.exp(torch.argmax(y_pred, dim=1) * 0.05 + 6 + 0.025)
         y_true = y
@@ -135,3 +133,30 @@ plt.tight_layout()
 plt.savefig(f'./checkpoints/{model_name}_correlation.png', dpi=300)
 plt.close()
 
+
+
+
+# Plot absolute deviation vs ground truth
+plt.figure(figsize=(10, 8))
+
+h = plt.hist2d(true_values, deviations, bins=100, norm=LogNorm(), cmap='viridis')
+plt.colorbar(h[3], label='Obs#')
+
+plt.xlabel('Te$_{obs}$ [K]')
+plt.ylabel('Te$_{model}$ - Te$_{obs}$ [K]')
+plt.title('Model Deviation vs Ground Truth')
+
+# Add mean deviation line and print the mean deviation value
+bin_means, bin_edges, _ = scipy.stats.binned_statistic(true_values, deviations,
+                                                statistic='mean', bins=50)
+bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+plt.plot(bin_centers, bin_means, 'r-', linewidth=2, label='Mean Deviation')
+plt.legend()
+
+# Calculate and print the mean deviation value
+mean_deviation = np.mean(deviations)
+print(f"Mean Deviation: {mean_deviation:.3f}")
+
+plt.tight_layout()
+plt.savefig(f'./checkpoints/{model_name}_deviation_vs_truth.png', dpi=300)
+plt.close()
