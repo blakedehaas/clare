@@ -35,7 +35,7 @@ for date in dates:
     ax1.tick_params(axis='x', rotation=45)
     
     # Plot indices on middle subplot
-    # Plot AL index
+    # Plot AL index (only plotting AL_index_0 for now because it is messy)
     ax2.plot(day_data['DateTimeFormatted'], day_data['AL_index_0'], '-', color='blue', label='AL Index')
     # Plot all SYM-H indices
     for i in range(145):  # 0-144 based on input_columns from context
