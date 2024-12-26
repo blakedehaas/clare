@@ -4,56 +4,60 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 import os
-
 class SamplingDataset(Dataset):
     """
-    TODO: Delete this later, currently unused
+    A dataset that samples from multiple datasets according to specified ratios.
+    Optimized for fast sampling in training loops.
     """
-    def __init__(self, dataframe, input_columns, output_column, sampling_ratios=None):
-        self.input_columns = input_columns
-        self.output_column = output_column
-        
-        # Calculate quartiles
-        quartiles = dataframe[output_column].quantile([0.25, 0.5, 0.75])
-        
-        # Create masks for each quartile
-        q1_mask = dataframe[output_column] <= quartiles[0.25]
-        q2_mask = (dataframe[output_column] > quartiles[0.25]) & (dataframe[output_column] <= quartiles[0.5])
-        q3_mask = (dataframe[output_column] > quartiles[0.5]) & (dataframe[output_column] <= quartiles[0.75])
-        q4_mask = dataframe[output_column] > quartiles[0.75]
-        
-        # Store indices for each quartile
-        self.quartile_indices = [
-            dataframe.index[q1_mask].tolist(),
-            dataframe.index[q2_mask].tolist(),
-            dataframe.index[q3_mask].tolist(),
-            dataframe.index[q4_mask].tolist()
-        ]
-        
-        # Convert dataframe to tensors for faster access
-        self.X = torch.tensor(dataframe[input_columns].values, dtype=torch.float32)
-        self.y = torch.tensor(dataframe[output_column].values, dtype=torch.float32).reshape(-1, 1)
+    def __init__(self, datasets, sampling_ratios=None, batch_size=512):
+        """
+        Args:
+            datasets (list): List of datasets to sample from
+            sampling_ratios (list, optional): List of sampling ratios for each dataset.
+                                           Must sum to 1. If None, samples equally from all datasets.
+        """
+        self.datasets = datasets
         
         # Set default sampling ratios if not provided
-        self.sampling_ratios = sampling_ratios or [0.25, 0.25, 0.25, 0.25]
-        assert len(self.sampling_ratios) == 4, "Sampling ratios must be a list of 4 values"
-        assert abs(sum(self.sampling_ratios) - 1.0) < 1e-6, "Sampling ratios must sum to 1"
+        if sampling_ratios is None:
+            n_datasets = len(datasets)
+            self.sampling_ratios = np.array([1.0/n_datasets] * n_datasets)
+        else:
+            self.sampling_ratios = np.array(sampling_ratios)
+            
+        assert len(self.sampling_ratios) == len(datasets), \
+            f"Number of sampling ratios ({len(self.sampling_ratios)}) must match number of datasets ({len(datasets)})"
+        assert abs(np.sum(self.sampling_ratios) - 1.0) < 1e-6, "Sampling ratios must sum to 1"
+        
+        # Store dataset lengths and precompute cumulative probabilities
+        self.dataset_lengths = np.array([len(ds) for ds in datasets])
+        self.total_length = np.sum(self.dataset_lengths)
+        
+        # Pre-generate random indices for faster sampling
+        self.rng = np.random.Generator(np.random.PCG64())
+        self.batch_size = batch_size
+        self.dataset_indices = self._generate_indices()
+        self.current_idx = 0
+
+    def _generate_indices(self):
+        return self.rng.choice(len(self.datasets), size=self.batch_size, p=self.sampling_ratios)
 
     def __len__(self):
-        return sum(len(q) for q in self.quartile_indices)
+        return self.total_length
 
     def __getitem__(self, idx):
-        # Determine which quartile to sample from based on the sampling ratios
-        quartile_idx = np.random.choice(4, p=self.sampling_ratios)
+        # Use pre-generated dataset index
+        if self.current_idx >= self.batch_size:
+            self.dataset_indices = self._generate_indices()
+            self.current_idx = 0
+            
+        dataset_idx = self.dataset_indices[self.current_idx]
+        self.current_idx += 1
         
-        # Get the indices for the chosen quartile
-        quartile_indices = self.quartile_indices[quartile_idx]
+        # Fast random sampling using numpy's Generator
+        sample_idx = int(self.rng.integers(self.dataset_lengths[dataset_idx]))
         
-        # Sample a random index from the chosen quartile
-        sample_idx = quartile_indices[np.random.randint(len(quartile_indices))]
-        
-        # Return the sampled data point
-        return self.X[sample_idx], self.y[sample_idx]
+        return self.datasets[dataset_idx][sample_idx]
 
 def calculate_stats(ds, columns):
     means_dict = {}
