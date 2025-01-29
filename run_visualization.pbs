@@ -1,0 +1,12 @@
+#!/bin/bash
+#PBS -N viz_1_24
+#PBS -A UCUL0008
+#PBS -l select=1:ncpus=4:ngpus=1:mem=32GB
+#PBS -l walltime=24:00:00
+#PBS -q casper
+#PBS -j oe
+#PBS -m abe
+#PBS -M blake.dehaas@lasp.colorado.edu
+
+# Run the visualization.py script
+python visualization.py
