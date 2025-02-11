@@ -1,2 +1,6 @@
 data/*
 wandb/*
+*.pth
+*.png
+*.tsv
+*.pyc

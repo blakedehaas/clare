@@ -18,32 +18,67 @@ import datasets
 # Hyperparameters
 batch_size = 512
 num_epochs = 1
-max_lr = 1e-4
-model_name = '1_24'
+max_lr = 5e-4
+min_lr = max_lr / 1000
+model_name = '1_37'
 log_every_step = 10
 
 input_columns = ['Altitude', 'GCLAT', 'GCLON', 'ILAT', 'GLAT', 'GMLT', 'XXLAT', 'XXLON', 'AL_index_0', 'AL_index_1', 'AL_index_2', 'AL_index_3', 'AL_index_4', 'AL_index_5', 'AL_index_6', 'AL_index_7', 'AL_index_8', 'AL_index_9', 'AL_index_10', 'AL_index_11', 'AL_index_12', 'AL_index_13', 'AL_index_14', 'AL_index_15', 'AL_index_16', 'AL_index_17', 'AL_index_18', 'AL_index_19', 'AL_index_20', 'AL_index_21', 'AL_index_22', 'AL_index_23', 'AL_index_24', 'AL_index_25', 'AL_index_26', 'AL_index_27', 'AL_index_28', 'AL_index_29', 'AL_index_30', 'SYM_H_0', 'SYM_H_1', 'SYM_H_2', 'SYM_H_3', 'SYM_H_4', 'SYM_H_5', 'SYM_H_6', 'SYM_H_7', 'SYM_H_8', 'SYM_H_9', 'SYM_H_10', 'SYM_H_11', 'SYM_H_12', 'SYM_H_13', 'SYM_H_14', 'SYM_H_15', 'SYM_H_16', 'SYM_H_17', 'SYM_H_18', 'SYM_H_19', 'SYM_H_20', 'SYM_H_21', 'SYM_H_22', 'SYM_H_23', 'SYM_H_24', 'SYM_H_25', 'SYM_H_26', 'SYM_H_27', 'SYM_H_28', 'SYM_H_29', 'SYM_H_30', 'SYM_H_31', 'SYM_H_32', 'SYM_H_33', 'SYM_H_34', 'SYM_H_35', 'SYM_H_36', 'SYM_H_37', 'SYM_H_38', 'SYM_H_39', 'SYM_H_40', 'SYM_H_41', 'SYM_H_42', 'SYM_H_43', 'SYM_H_44', 'SYM_H_45', 'SYM_H_46', 'SYM_H_47', 'SYM_H_48', 'SYM_H_49', 'SYM_H_50', 'SYM_H_51', 'SYM_H_52', 'SYM_H_53', 'SYM_H_54', 'SYM_H_55', 'SYM_H_56', 'SYM_H_57', 'SYM_H_58', 'SYM_H_59', 'SYM_H_60', 'SYM_H_61', 'SYM_H_62', 'SYM_H_63', 'SYM_H_64', 'SYM_H_65', 'SYM_H_66', 'SYM_H_67', 'SYM_H_68', 'SYM_H_69', 'SYM_H_70', 'SYM_H_71', 'SYM_H_72', 'SYM_H_73', 'SYM_H_74', 'SYM_H_75', 'SYM_H_76', 'SYM_H_77', 'SYM_H_78', 'SYM_H_79', 'SYM_H_80', 'SYM_H_81', 'SYM_H_82', 'SYM_H_83', 'SYM_H_84', 'SYM_H_85', 'SYM_H_86', 'SYM_H_87', 'SYM_H_88', 'SYM_H_89', 'SYM_H_90', 'SYM_H_91', 'SYM_H_92', 'SYM_H_93', 'SYM_H_94', 'SYM_H_95', 'SYM_H_96', 'SYM_H_97', 'SYM_H_98', 'SYM_H_99', 'SYM_H_100', 'SYM_H_101', 'SYM_H_102', 'SYM_H_103', 'SYM_H_104', 'SYM_H_105', 'SYM_H_106', 'SYM_H_107', 'SYM_H_108', 'SYM_H_109', 'SYM_H_110', 'SYM_H_111', 'SYM_H_112', 'SYM_H_113', 'SYM_H_114', 'SYM_H_115', 'SYM_H_116', 'SYM_H_117', 'SYM_H_118', 'SYM_H_119', 'SYM_H_120', 'SYM_H_121', 'SYM_H_122', 'SYM_H_123', 'SYM_H_124', 'SYM_H_125', 'SYM_H_126', 'SYM_H_127', 'SYM_H_128', 'SYM_H_129', 'SYM_H_130', 'SYM_H_131', 'SYM_H_132', 'SYM_H_133', 'SYM_H_134', 'SYM_H_135', 'SYM_H_136', 'SYM_H_137', 'SYM_H_138', 'SYM_H_139', 'SYM_H_140', 'SYM_H_141', 'SYM_H_142', 'SYM_H_143', 'SYM_H_144', 'f107_index_0', 'f107_index_1', 'f107_index_2', 'f107_index_3']
-output_columns = ['Te1']
-train_path = "data/akebono_solar_combined_v6_chu_train"
-train_subdirs = [f.path for f in os.scandir(train_path) if f.is_dir()]
-train_datasets = []
-for subdir in tqdm(train_subdirs, desc="Loading train datasets"):
-    ds = datasets.Dataset.load_from_disk(subdir)
-    train_datasets.append(ds)
-train_ds = datasets.concatenate_datasets(train_datasets)
-val_ds = datasets.Dataset.load_from_disk("data/akebono_solar_combined_v6_chu_val")
+output_columns = ['Ne1']
+train_path = "data/akebono_solar_combined_v7_chu_train"
+# train_subdirs = [f.path for f in os.scandir(train_path) if f.is_dir()]
+# train_datasets = []
+# for subdir in tqdm(train_subdirs, desc="Loading train datasets"):
+#     ds = datasets.Dataset.load_from_disk(subdir)
+#     train_datasets.append(ds)
+# train_ds = datasets.concatenate_datasets(train_datasets)
+train_ds = datasets.Dataset.load_from_disk(train_path)
+val_ds = datasets.Dataset.load_from_disk("data/akebono_solar_combined_v7_chu_test")
 
-train_ds = train_ds.remove_columns(['DateTimeFormatted', 'Ne1', 'Pv1', 'Te2', 'Ne2', 'Pv2', 'Te3', 'Ne3', 'Pv3', 'I1', 'I2', 'I3'])
-val_ds = val_ds.remove_columns(['DateTimeFormatted', 'Ne1', 'Pv1', 'Te2', 'Ne2', 'Pv2', 'Te3', 'Ne3', 'Pv3', 'I1', 'I2', 'I3'])
+train_ds = train_ds.remove_columns(['DateTimeFormatted', 'Te1', 'Pv1', 'Te2', 'Ne2', 'Pv2', 'Te3', 'Ne3', 'Pv3', 'I1', 'I2', 'I3'])
+val_ds = val_ds.remove_columns(['DateTimeFormatted', 'Te1', 'Pv1', 'Te2', 'Ne2', 'Pv2', 'Te3', 'Ne3', 'Pv3', 'I1', 'I2', 'I3'])
 
 # Double-check that only the specified columns are kept
 all_columns = input_columns + output_columns
 assert set(train_ds.column_names) == set(all_columns), "Mismatch in columns after selection"
 assert set(val_ds.column_names) == set(all_columns), "Mismatch in columns after selection"
-columns_to_normalize = input_columns
+# columns_to_normalize = input_columns
 
-# Load or calculate mean and std for the specified columns
+# Normalization V2 - GCLON GMLT XXLON are sinusoidal and all the other ones should be in diffined ranges
+# Defined ranges
+# Dictionary of normalization operations
+normalizations = {
+    'Altitude': lambda x: (np.array(x, dtype=np.float32) - 4000) / 4000,  # Scale to [-1, 1]
+    'GCLON': lambda x: np.sin(np.deg2rad(np.array(x, dtype=np.float32))),  # Convert longitude to sine
+    'GCLAT': lambda x: np.array(x, dtype=np.float32) / 90,  # Scale latitude to [-1, 1]
+    'ILAT': lambda x: np.array(x, dtype=np.float32) / 90,  # Scale latitude to [-1, 1]
+    'GLAT': lambda x: np.array(x, dtype=np.float32) / 90,  # Scale latitude to [-1, 1]
+    'GMLT': lambda x: np.sin(np.array(x, dtype=np.float32) * np.pi / 12),  # Convert MLT (0-24) to sine
+    'XXLAT': lambda x: np.array(x, dtype=np.float32) / 90,  # Scale latitude to [-1, 1]
+    'XXLON': lambda x: np.sin(np.deg2rad(np.array(x, dtype=np.float32))),  # Convert longitude to sine
+}
+
+def normalize_batch(batch):
+    for col, norm_func in normalizations.items():
+        batch[col] = norm_func(batch[col])
+    return batch
+
+train_ds = train_ds.map(normalize_batch, batched=True, batch_size=10000, num_proc=os.cpu_count())
+val_ds = val_ds.map(normalize_batch, batched=True, batch_size=10000, num_proc=os.cpu_count())
+
+# Solar indices
+# Group indices by type
+columns_to_normalize = [col for col in input_columns if col.startswith('AL_index') or col.startswith('SYM_H') or col.startswith('f107_index')]
+index_groups = {
+    'AL_index': [col for col in columns_to_normalize if col.startswith('AL_index')],
+    'SYM_H': [col for col in columns_to_normalize if col.startswith('SYM_H')],
+    'f107_index': [col for col in columns_to_normalize if col.startswith('f107_index')]
+}
+# Calculate mean and std for each group
+means = {}
+stds = {}
 stats_file = f'data/{model_name}_norm_stats.json'
+
 if os.path.exists(stats_file):
     print(f"Loading existing normalization stats from {stats_file}")
     with open(stats_file, 'r') as f:
@@ -51,31 +86,71 @@ if os.path.exists(stats_file):
         means = stats['mean']
         stds = stats['std']
 else:
-    means, stds = utils.calculate_stats(val_ds, columns_to_normalize)
+    for group_name, group_cols in tqdm(index_groups.items(), desc="Calculating group stats"):
+        # Combine all columns in group into single array
+        group_values = np.concatenate([train_ds.with_format("pandas")[col].values for col in group_cols])
+        
+        # Calculate stats for whole group
+        group_mean = float(np.mean(group_values))
+        group_std = float(np.std(group_values))
+        
+        # Store stats for this group
+        means[group_name] = group_mean
+        stds[group_name] = group_std
+    
+    # Save stats to file
     with open(stats_file, 'w') as f:
         json.dump({'mean': means, 'std': stds}, f)
 
-# Normalize train and eval datasets using the combined stats
-train_ds = utils.normalize_ds(train_ds, means, stds, columns_to_normalize)
-val_ds = utils.normalize_ds(val_ds, means, stds, columns_to_normalize, normalize_output=True)
+# Apply normalization to all columns in group at once
+group_cols = [col for cols in index_groups.values() for col in cols]
+def normalize_group(batch):
+    for col in group_cols:
+        # Get the group name from the column name (e.g. 'AL_index_1' -> 'AL_index')
+        group_name = '_'.join(col.split('_')[:-1]) if col.split('_')[-1].isdigit() else col
+        # Convert batch[col] to numpy array before arithmetic operations
+        values = np.array(batch[col], dtype=np.float32)
+        batch[col] = (values - means[group_name]) / stds[group_name]
+    return batch
 
-# Convert to tensor
+train_ds = train_ds.map(normalize_group, batched=True, batch_size=10000, num_proc=os.cpu_count())
+val_ds = val_ds.map(normalize_group, batched=True, batch_size=10000, num_proc=os.cpu_count())
+
+# Load or calculate mean and std for the specified columns
+# stats_file = f'data/{model_name}_norm_stats.json'
+# if os.path.exists(stats_file):
+#     print(f"Loading existing normalization stats from {stats_file}")
+#     with open(stats_file, 'r') as f:
+#         stats = json.load(f)
+#         means = stats['mean']
+#         stds = stats['std']
+# else:
+#     means, stds = utils.calculate_stats(val_ds, columns_to_normalize)
+#     with open(stats_file, 'w') as f:
+#         json.dump({'mean': means, 'std': stds}, f)
+
+# # # Normalize train and eval datasets using the combined stats
+# train_ds = utils.normalize_ds(train_ds, means, stds, columns_to_normalize, normalize_output=False)
+# val_ds = utils.normalize_ds(val_ds, means, stds, columns_to_normalize, normalize_output=False)
+
+# # Convert to tensor
 def convert_to_tensor(row):
     input_ids = torch.tensor([v for k,v in row.items() if k not in output_columns])
     label = torch.tensor([v for k,v in row.items() if k in output_columns])
-    label = ((label - 6) / 0.05).clamp(0, 79).long().squeeze()
+    label = (label // 100).clamp(0, 149).long().squeeze()
     return {"input_ids": input_ids, "label": label}
 val_ds = val_ds.map(convert_to_tensor, num_proc=os.cpu_count(), remove_columns=all_columns)
 train_ds = train_ds.map(convert_to_tensor, num_proc=os.cpu_count(), remove_columns=all_columns)
 val_ds.set_format(type="torch")
 train_ds.set_format(type="torch")
+
 train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=os.cpu_count())
 val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=os.cpu_count())
 
 # Initialize the model
 input_size = len(input_columns)
 hidden_size = 2048
-output_size = 80
+output_size = 150
 model = FF_2Network(input_size, hidden_size, output_size).to("cuda")
 total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 print(f"Total trainable parameters: {total_params:,}")
@@ -88,7 +163,7 @@ optimizer = optim.Adam(model.parameters(), lr=max_lr)
 steps_per_epoch = len(train_loader)
 total_train_steps = num_epochs * steps_per_epoch
 scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=total_train_steps, 
-                                                       eta_min=max_lr / 1000)
+                                                       eta_min=min_lr)
 
 # Initialize wandb run
 wandb.init(
