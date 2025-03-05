@@ -53,7 +53,6 @@ def normalize_batch(batch):
 test_ds = test_ds.map(normalize_batch, batched=True, batch_size=10000, num_proc=os.cpu_count())
 
 # Solar indices
-# Group indices by type
 columns_to_normalize = [col for col in input_columns if col.startswith('AL_index') or col.startswith('SYM_H') or col.startswith('f107_index')]
 index_groups = {
     'AL_index': [col for col in columns_to_normalize if col.startswith('AL_index')],
@@ -61,8 +60,7 @@ index_groups = {
     'f107_index': [col for col in columns_to_normalize if col.startswith('f107_index')]
 }
 # Calculate mean and std for each group
-means = {}
-stds = {}
+means, stds = {}, {}
 stats_file = f'data/{model_name}_norm_stats.json'
 
 if os.path.exists(stats_file):
@@ -198,8 +196,8 @@ plt.figure(figsize=(10, 8))
 h = plt.hist2d(true_values, deviations, bins=100, norm=LogNorm(), cmap='viridis')
 plt.colorbar(h[3], label='Obs#')
 
-plt.xlabel('Te$_{obs}$ [K]')
-plt.ylabel('Te$_{model}$ - Te$_{obs}$ [K]')
+plt.xlabel(f'Te$_{obs}$ [K]')
+plt.ylabel(f'Te$_{model}$ - Te$_{obs}$ [K]')
 plt.title('Model Deviation vs Ground Truth')
 
 # Add mean deviation line and print the mean deviation value
