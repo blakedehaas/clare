@@ -116,10 +116,9 @@ with torch.no_grad():
         y = batch["label"].to("cuda")
 
         # Forward pass
-        y_pred = model(x)
+        logits = model(x)
 
-        # y_pred = torch.exp(torch.argmax(y_pred, dim=1) * 0.05 + 6 + 0.025)
-        y_pred = torch.argmax(y_pred, dim=1) * 100 + 50
+        y_pred = torch.argmax(logits, dim=1) * 100 + 50
         y_true = y
 
         predictions.extend(y_pred.flatten().tolist())
