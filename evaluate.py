@@ -52,6 +52,7 @@ normalizations = {
 
 def normalize_batch(batch):
     for col, norm_func in normalizations.items():
+        batch["raw_" + col] = batch[col]
         batch[col] = norm_func(batch[col])
     return batch
 
@@ -86,18 +87,20 @@ def normalize_group(batch):
         # Convert batch[col] to numpy array before arithmetic operations
         values = np.array(batch[col], dtype=np.float32)
         batch[col] = (values - means[group_name]) / stds[group_name]
+        batch["raw_" + col] = values
     return batch
 
 test_ds = test_ds.map(normalize_group, batched=True, batch_size=10000, num_proc=os.cpu_count())
 
 # Convert to tensor
 def convert_to_tensor(row):
-    input_ids = torch.tensor([v for k,v in row.items() if k not in output_columns + ['DateTimeFormatted']])
+    input_ids = torch.tensor([v for k,v in row.items() if k not in output_columns + ['DateTimeFormatted'] and not k.startswith("raw")])
     label = torch.tensor([v for k,v in row.items() if k in output_columns])
     return {
         "input_ids": input_ids, 
         "label": label,
-        "DateTimeFormatted": row['DateTimeFormatted']
+        "DateTimeFormatted": row['DateTimeFormatted'],
+        "data": row
     }
 test_ds = test_ds.map(convert_to_tensor, num_proc=os.cpu_count(), remove_columns=all_columns)
 
@@ -105,10 +108,12 @@ def custom_collate(batch):
     input_ids = torch.stack([torch.tensor(item['input_ids']) for item in batch])
     labels = torch.stack([torch.tensor(item['label']) for item in batch])
     datetimes = [item['DateTimeFormatted'] for item in batch]
+    datas = [item["data"] for item in batch]
     return {
         'input_ids': input_ids,
         'label': labels,
-        'DateTimeFormatted': datetimes
+        'DateTimeFormatted': datetimes,
+        "data": datas
     }
 
 test_loader = DataLoader(test_ds, batch_size=512, shuffle=False, num_workers=os.cpu_count(), collate_fn=custom_collate)
@@ -128,34 +133,45 @@ with torch.no_grad():
         std = torch.std(softmaxed, dim=1).cpu().numpy()    # Std across batch dimension
         stds_list.extend(std)  # Use extend instead of append to flatten the array
 
-        # # Low std dev is indicative of a more uniform distribution, high std dev is more certain (good)
-        # for idx in range(10):
-        #     logit = logits[idx]  # Get first prediction (150,)
-        #     softmaxed = torch.softmax(logit, dim=0)  # Apply softmax
-        #     plt.figure(figsize=(10, 4))
-        #     x_values = [i * 100 + 50 for i in range(len(softmaxed))]
-        #     softmaxed_np = softmaxed.cpu().numpy()
-        #     plt.plot(x_values, softmaxed_np)
+        # Low std dev is indicative of a more uniform distribution, high std dev is more certain (good)
+        
+        for idx in range(10):
+            logit = logits[idx]  # Get first prediction (150,)
+            softmaxed = torch.softmax(logit, dim=0)  # Apply softmax
+            plt.figure(figsize=(10, 4))
+            x_values = [i * 100 + 50 for i in range(len(softmaxed))]
+            softmaxed_np = softmaxed.cpu().numpy()
+            plt.plot(x_values, softmaxed_np)
             
-        #     # Calculate mean and std dev
-        #     std = np.std(softmaxed_np)
-        #     stats_text = f'Std Dev: {std:.3f}\nTrue Label: {y[idx].item()}'
-        #     plt.text(0.95, 0.95, stats_text, transform=plt.gca().transAxes,
-        #             verticalalignment='top', horizontalalignment='right',
-        #             bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+            # Calculate mean and std dev
+            std = np.std(softmaxed_np)
+            stats_text = (f'Std Dev: {std:.3f}\n'
+                        f'True Label: {y[idx].item()}\n'
+                        f'GCLAT: {batch["data"][idx]["raw_GCLAT"]:.2f}\n'
+                        f'GCLON: {batch["data"][idx]["raw_GCLON"]:.2f}\n'
+                        f'GLAT: {batch["data"][idx]["raw_GLAT"]:.2f}\n'
+                        f'GMLT: {batch["data"][idx]["raw_GMLT"]:.2f}\n'
+                        f'ILAT: {batch["data"][idx]["raw_ILAT"]:.2f}\n'
+                        f'AL Index_0: {batch["data"][idx]["raw_AL_index_0"]:.2f}\n'
+                        f'SYM_H_0: {batch["data"][idx]["raw_SYM_H_0"]:.2f}\n'
+                        f'F10.7_0: {batch["data"][idx]["raw_f107_index_0"]:.2f}')
+
+            plt.text(0.95, 0.95, stats_text, transform=plt.gca().transAxes,
+                    verticalalignment='top', horizontalalignment='right',
+                    bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
             
-        #     # Add vertical line at true label
-        #     true_label = y[idx].item()
-        #     plt.axvline(x=true_label, color='red', linestyle='--', label='True Label')
-        #     plt.legend()
+            # Add vertical line at true label
+            true_label = y[idx].item()
+            plt.axvline(x=true_label, color='red', linestyle='--', label='True Label')
+            plt.legend()
             
-        #     plt.xlabel('Energy (eV)')
-        #     plt.ylabel('Probability')
-        #     plt.title('Softmax Distribution of Model Output')
-        #     plt.grid(True)
-        #     plt.savefig(f'solar_logits_distribution_{idx}.png')
-        #     plt.close()
-        # exit()
+            plt.xlabel('Energy (eV)')
+            plt.ylabel('Probability')
+            plt.title(f'Softmax Distribution of Model Output {batch["DateTimeFormatted"][idx]}')
+            plt.grid(True)
+            plt.savefig(f'solar_logits_distribution_{idx}.png')
+            plt.close()
+        exit()
 
         # y_pred = torch.argmax(logits, dim=1) * 100 + 50
         # y_true = y
@@ -163,6 +179,7 @@ with torch.no_grad():
         # predictions.extend(y_pred.flatten().tolist())
         # true_values.extend(y_true.flatten().tolist())
         # times.extend(batch['DateTimeFormatted'])
+
 
 # Calculate and plot mean and standard deviation metrics
 mean_std_dev = np.mean(stds_list)
@@ -177,7 +194,6 @@ plt.title('Distribution of Batch Standard Deviation Values')
 plt.savefig('solar_stds_distribution.png')
 plt.close()
 
-exit()
 deviations = [pred - true for pred, true in zip(predictions, true_values)]
 
 # Calculate percentages within specified absolute deviations
