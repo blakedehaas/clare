@@ -3,15 +3,8 @@ import glob
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
-from sklearn.model_selection import train_test_split
 import datasets
 import pyarrow as pa
-from sklearn.cluster import KMeans
-from sklearn.preprocessing import MinMaxScaler
-import plotly.graph_objects as go
-from scipy.spatial.distance import cdist
-import matplotlib.pyplot as plt
-import math
 
 def check_data_files():
     """Check if required data files exist and return proper paths."""
@@ -232,7 +225,6 @@ filtered_df = pd.concat([filtered_df, pd.DataFrame(f107_columns, index=filtered_
 # Kp Index Data
 # -----------------------------------
 print("Processing Kp index data...")
-kp_file_path = os.path.join('data', 'omni_kp_index.lst')
 try:
     kp_df = pd.read_csv(kp_file_path, sep=r'\s+', names=['Year', 'DOY', 'Hour', 'Kp_index'])
     kp_df['DateTime'] = pd.to_datetime(kp_df['Year'] * 1000 + kp_df['DOY'], format='%Y%j') \
@@ -269,7 +261,7 @@ filtered_df = pd.concat([filtered_df, pd.DataFrame(kp_columns, index=filtered_df
 print("Cleaning data and optimizing data types...")
 
 # List of invalid placeholder values
-invalid_values = [99.9, 999.9, 9.999, 9999.0, 9999.99, 99999.99, 9999999, 9999999.0]
+invalid_values = [99, 99.9, 999.9, 9.999, 9999.0, 9999.99, 99999.99, 9999999, 9999999.0]
 
 # Function to count and replace invalid values
 def replace_and_count_invalid_values(df, invalid_values, replacement=0):
@@ -338,5 +330,3 @@ for bucket in unique_buckets:
     dataset_bucket.save_to_disk(output_dir, max_shard_size="1000GB")
     
     print(f"Bucket {bucket} saved to: {output_dir}")
-
-
