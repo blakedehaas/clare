@@ -5,6 +5,9 @@ import pandas as pd
 from tqdm import tqdm
 import datasets
 import pyarrow as pa
+from sklearn.model_selection import train_test_split
+import math
+import shutil
 
 def check_data_files():
     """Check if required data files exist and return proper paths."""
@@ -300,33 +303,69 @@ def replace_and_count_invalid_values(df, invalid_values, replacement=0):
 # Apply the function to the filtered_df
 invalid_value_report = replace_and_count_invalid_values(filtered_df, invalid_values)
 
+# -----------------------------------
+# Dataset Splitting
+# -----------------------------------
+print("\nSplitting the dataset into training, validation, and test sets...")
 
-# ------------------------------------------------------
-# Split by kp_index bucket.
-# ------------------------------------------------------
+# Define output paths
+base_output_dir = "output_dataset"
 
-# Create a bucket column by dividing by 10 and converting to an integer
-filtered_df['kp_bucket'] = filtered_df['Kp_index_0'] // 10
+# Clean up existing output directory
+if os.path.exists(base_output_dir):
+    print(f"\nRemoving existing output directory: {base_output_dir}")
+    shutil.rmtree(base_output_dir)
 
-# Get all unique bucket values and sort them
-unique_buckets = sorted(filtered_df['kp_bucket'].unique())
-print("Unique kp buckets found:", unique_buckets)
+os.makedirs(base_output_dir, exist_ok=True)
 
-# Define the parent directory for all bucketed datasets
-parent_output_dir = "output_dataset"
-os.makedirs(parent_output_dir, exist_ok=True)
+# 1. Extract the June 1991 solar storm period for validation
+validation_start = '1991-06-02'
+validation_end = '1991-06-08'  # Exclusive end date
+val_mask = (filtered_df.index >= validation_start) & (filtered_df.index < validation_end)
+val_df = filtered_df.loc[val_mask].copy()
+remaining_df = filtered_df.loc[~val_mask].copy()
+del filtered_df  # Free up memory
 
+print(f"Extracted {len(val_df)} rows for validation (June 1991 solar storm period)")
+
+# 2. Split remaining data to get test set (50,000 rows)
+train_df, test_df = train_test_split(remaining_df, test_size=50000, random_state=42)
+del remaining_df  # Free up memory
+
+print(f"Split remaining data into {len(train_df)} training rows and {len(test_df)} test rows")
+
+# Function to save dataset
+def save_dataset(df, name, output_dir):
+    """Save a DataFrame as a HuggingFace dataset."""
+    print(f"Saving {name} dataset...")
+    dataset = datasets.Dataset(pa.Table.from_pandas(df))
+    dataset.save_to_disk(os.path.join(base_output_dir, output_dir))
+    print(f"Saved {len(df)} rows to {output_dir}")
+
+# Save validation and test datasets
+save_dataset(val_df, "validation", "validation")
+del val_df
+save_dataset(test_df, "test", "test")
+del test_df
+
+# 3. Split and save training data by KP index buckets
+print("\nSplitting and saving training data by KP index buckets...")
+
+# Create a bucket column
+train_df['kp_bucket'] = train_df['Kp_index_0'] // 10
+
+# Get unique buckets
+unique_buckets = sorted(train_df['kp_bucket'].unique())
+print("Unique KP buckets found:", unique_buckets)
+
+# Save each bucket
 for bucket in unique_buckets:
-    bucket_df = filtered_df[filtered_df['kp_bucket'] == bucket]
+    bucket_df = train_df[train_df['kp_bucket'] == bucket].copy()
+    bucket_df.drop(columns=['kp_bucket'], inplace=True)  # Remove the bucket column
     
-    # Prepare the directory within the parent output directory
-    output_dir = os.path.join(parent_output_dir, f"akebono_solar_kp_{bucket}_{bucket+1}")
-    os.makedirs(output_dir, exist_ok=True)
-    
-    print(f"Saving {len(bucket_df)} rows for kp bucket {bucket} (values in [{bucket * 10}, {(bucket + 1) * 10}))...")
-    
-    # Convert to a Dataset and save to disk
-    dataset_bucket = datasets.Dataset(pa.Table.from_pandas(bucket_df))
-    dataset_bucket.save_to_disk(output_dir, max_shard_size="1000GB")
-    
-    print(f"Bucket {bucket} saved to: {output_dir}")
+    bucket_name = f"train/kp_{bucket}_{bucket+1}"
+    save_dataset(bucket_df, f"KP bucket {bucket}", bucket_name)
+
+del train_df  # Free up memory
+
+print("\nDataset splitting and saving complete!")
