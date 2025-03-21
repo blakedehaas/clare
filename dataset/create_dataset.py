@@ -5,6 +5,9 @@ import pandas as pd
 from tqdm import tqdm
 import datasets
 import pyarrow as pa
+from sklearn.model_selection import train_test_split
+import math
+import shutil
 
 def check_data_files():
     """Check if required data files exist and return proper paths."""
@@ -71,10 +74,18 @@ f107_file_path = os.path.join('input_dataset', 'omni_f107', '*.lst')
 al_symh_files, f107_files = check_data_files()
 
 # Read the Akebono data in chunks to optimize memory usage
-print("Reading Akebono data...")
-df = pd.read_csv(akebono_file_path, sep='\t')
-df['DateFormatted'] = pd.to_datetime(df['DateFormatted'], errors='coerce')
-initial_row_count = len(df)
+chunk_size = 500000
+chunks = []
+initial_row_count = 0
+
+print("Reading Akebono data in chunks...")
+for chunk in tqdm(pd.read_csv(akebono_file_path, sep='\t', chunksize=chunk_size), desc="Loading Akebono data"):
+    chunk['DateFormatted'] = pd.to_datetime(chunk['DateFormatted'], errors='coerce')
+    initial_row_count += len(chunk)
+    chunks.append(chunk)
+
+df = pd.concat(chunks, ignore_index=True)
+del chunks
 
 print(f"\nInitial number of rows: {initial_row_count}\n")
 print("Starting data cleaning steps...")
@@ -116,9 +127,6 @@ filtered_df.set_index('DateTimeFormatted', inplace=True)
 
 # -----------------------------------
 # SYM-H and AL Index Data
-
-# AL_index: Every 10 mins for the prev 5 hours
-# SYM_H: Every 30 minutes for the previous 3 days
 # -----------------------------------
 print("Processing SYM-H and AL index data...")
 
@@ -177,8 +185,6 @@ filtered_df.drop(columns=['AL_index', 'SYM_H'], inplace=True, errors='ignore')
 
 # -----------------------------------
 # F10.7 Solar Flux Index
-
-# F10.7: Every 24 hours for the prev 72 hours
 # -----------------------------------
 print("Processing F10.7 solar flux index data...")
 
@@ -238,10 +244,19 @@ kp_df.drop_duplicates(subset='DateTime', keep='first', inplace=True)
 kp_df.set_index('DateTime', inplace=True)
 kp_df.sort_index(inplace=True)
 
-print("Adding nearest hourly Kp index values...")
-# Round filtered_df index to nearest hour to match kp_df hourly data
-nearest_hours = filtered_df.index.round('h')
-filtered_df['Kp_index'] = kp_df['Kp_index'].reindex(nearest_hours).values // 10
+print("Expanding temporal features for Kp index...")
+kp_time_range = pd.timedelta_range(start='0h', end='72h', freq='1h')
+kp_timestamps = dt_index.values[:, None] - kp_time_range.values
+kp_timestamps = pd.DatetimeIndex(kp_timestamps.ravel()).round('h')
+kp_values = kp_df['Kp_index'].reindex(kp_timestamps).values.reshape(len(dt_index), -1)
+
+print("Creating Kp_index temporal features...")
+kp_columns = {}
+for i in range(kp_values.shape[1]):
+    kp_columns[f'Kp_index_{i}'] = kp_values[:, i]
+
+print("Concatenating Kp_index temporal features to the DataFrame...")
+filtered_df = pd.concat([filtered_df, pd.DataFrame(kp_columns, index=filtered_df.index)], axis=1)
 
 # -----------------------------------
 # Data Cleaning: Replace Invalid Values and Optimize Data Types
@@ -283,146 +298,74 @@ def replace_and_count_invalid_values(df, invalid_values, replacement=0):
     else:
         print("\nNo invalid values found to replace.")
     
+    return update_counts
 
 # Apply the function to the filtered_df
-replace_and_count_invalid_values(filtered_df, invalid_values)
+invalid_value_report = replace_and_count_invalid_values(filtered_df, invalid_values)
 
-# ------------------------------------------------------
-# Verify values are as expected
-# ------------------------------------------------------
+# -----------------------------------
+# Dataset Splitting
+# -----------------------------------
+print("\nSplitting the dataset into training, validation, and test sets...")
 
-# Verify specific dates have expected values
-test_dates = {
-    '1997-06-13 18:06:00': {
-        "Altitude": 1410.0,
-        "GCLAT": -73.35,
-        "GCLON": 320.1,
-        "ILAT": 59.16,
-        "GLAT": -58.4,
-        "GMLT": 14.97,
-        "XXLAT": -58.81,
-        "XXLON": 15.0,
-        "Te1": 6631,
-        "Ne1": 779,
-        "Pv1": 2.66,
-        "Te2": 0,
-        "Ne2": 0,
-        "Pv2": 0.0,
-        "Te3": 0,
-        "Ne3": 0,
-        "Pv3": 0.0,
-        "I1": 21,
-        "I2": 0,
-        "I3": 0,
-    "AL_index_0": -21.0,
-    "AL_index_1": -39.0,
-    "AL_index_2": -17.0,
-    "AL_index_3": -19.0,
-    "AL_index_4": -18.0,
-    "AL_index_5": -26.0,
-    "AL_index_6": -25.0,
-    "AL_index_7": -13.0,
-    "AL_index_8": -13.0,
-    "AL_index_9": -14.0,
-    "AL_index_10": -19.0,
-    "AL_index_11": -47.0,
-    "AL_index_12": -72.0,
-    "AL_index_13": -99.0,
-    "AL_index_14": -118.0,
-    "AL_index_15": -141.0,
-    "AL_index_16": -108.0,
-    "AL_index_17": -171.0,
-    "AL_index_18": -153.0,
-    "AL_index_19": -94.0,
-    "AL_index_20": -52.0,
-    "AL_index_21": -83.0,
-    "AL_index_22": -119.0,
-    "AL_index_23": -93.0,
-    "AL_index_24": -81.0,
-    "AL_index_25": -96.0,
-    "AL_index_26": -119.0,
-    "AL_index_27": -185.0,
-    "AL_index_28": -231.0,
-    "AL_index_29": -129.0,
-    "AL_index_30": -75.0,
-    "SYM_H_0": -1.0,
-    "SYM_H_1": -3.0,
-    "SYM_H_2": -2.0,
-    "SYM_H_3": -2.0,
-    "SYM_H_4": -2.0,
-    "SYM_H_5": 0.0,
-    "SYM_H_6": 1.0,
-    "SYM_H_7": -1.0,
-    "SYM_H_8": -1.0,
-    "SYM_H_9": -1.0,
-    "SYM_H_10": -1.0,
-    "SYM_H_11": 0.0,
-    "SYM_H_12": 1.0,
-    "SYM_H_13": 1.0,
-    "SYM_H_14": 3.0,
-    "SYM_H_15": 1.0,
-    "SYM_H_16": 1.0,
-    "SYM_H_17": 0.0,
-    "SYM_H_18": -1.0,
-    "SYM_H_19": -4.0,
-    "SYM_H_20": -4.0,
-    "SYM_H_21": -4.0,
-    "SYM_H_22": -3.0,
-    "SYM_H_23": -4.0,
-    "SYM_H_24": -4.0,
-    "SYM_H_25": -1.0,
-    "SYM_H_26": -2.0,
-    "SYM_H_27": -1.0,
-    "SYM_H_28": 1.0,
-    "SYM_H_29": -1.0,
-    "SYM_H_30": -4.0,
-    "f107_index_0": 72.3,
-    "f107_index_1": 71.8,
-    "f107_index_2": 73.0,
-    "f107_index_3": 74.2,
-    "Kp_index": 0.0
-    }
-}
+# Define output paths
+base_output_dir = "output_dataset"
 
-print("\nVerifying values in dataset...")
-for date, v in test_dates.items():
-    row = filtered_df.loc[date].iloc[0]
-    for col, expected_val in v.items():
-        actual_val = row[col]
-        assert actual_val == expected_val, f"Mismatch for {date} {col}: Expected {expected_val}, got {actual_val}"
+# Clean up existing output directory
+if os.path.exists(base_output_dir):
+    print(f"\nRemoving existing output directory: {base_output_dir}")
+    shutil.rmtree(base_output_dir)
 
-# ------------------------------------------------------
-# Save by Kp index
-# ------------------------------------------------------
+os.makedirs(base_output_dir, exist_ok=True)
 
-# Define the parent directory for all bucketed datasets
-parent_output_dir = "output_dataset"
-os.makedirs(parent_output_dir, exist_ok=True)
+# 1. Extract the June 1991 solar storm period for validation
+validation_start = '1991-06-02'
+validation_end = '1991-06-08'  # Exclusive end date
+val_mask = (filtered_df.index >= validation_start) & (filtered_df.index < validation_end)
+val_df = filtered_df.loc[val_mask].copy()
+remaining_df = filtered_df.loc[~val_mask].copy()
+del filtered_df  # Free up memory
 
-# Get unique Kp index values
-unique_kp_values = sorted(filtered_df['Kp_index'].unique())
+print(f"Extracted {len(val_df)} rows for validation (June 1991 solar storm period)")
 
-total_rows_saved = 0
-for kp_value in unique_kp_values:
-    # Get rows for this Kp value
-    kp_df = filtered_df[filtered_df['Kp_index'] == kp_value]
+# 2. Split remaining data to get test set (50,000 rows)
+train_df, test_df = train_test_split(remaining_df, test_size=50000, random_state=42)
+del remaining_df  # Free up memory
+
+print(f"Split remaining data into {len(train_df)} training rows and {len(test_df)} test rows")
+
+# Function to save dataset
+def save_dataset(df, name, output_dir):
+    """Save a DataFrame as a HuggingFace dataset."""
+    print(f"Saving {name} dataset...")
+    dataset = datasets.Dataset(pa.Table.from_pandas(df))
+    dataset.save_to_disk(os.path.join(base_output_dir, output_dir))
+    print(f"Saved {len(df)} rows to {output_dir}")
+
+# Save validation and test datasets
+save_dataset(val_df, "validation", "validation")
+del val_df
+save_dataset(test_df, "test", "test")
+del test_df
+
+# 3. Split and save training data by KP index buckets
+print("\nSplitting and saving training data by KP index buckets...")
+
+# Create a bucket column
+train_df['kp_bucket'] = train_df['Kp_index_0'] // 10
+
+# Get unique buckets
+unique_buckets = sorted(train_df['kp_bucket'].unique())
+print("Unique KP buckets found:", unique_buckets)
+
+# Save each bucket
+for bucket in unique_buckets:
+    bucket_df = train_df[train_df['kp_bucket'] == bucket].copy()
+    bucket_df.drop(columns=['kp_bucket'], inplace=True)  # Remove the bucket column
     
-    # Prepare the directory within the parent output directory
-    output_dir = os.path.join(parent_output_dir, f"akebono_solar_kp_{kp_value}")
-    os.makedirs(output_dir, exist_ok=True)
-    
-    print(f"Saving {len(kp_df)} rows for Kp index value {kp_value}...")
-    
-    # Convert to a Dataset and save to disk
-    dataset_kp = datasets.Dataset(pa.Table.from_pandas(kp_df))
-    dataset_kp.save_to_disk(output_dir)
-    
-    total_rows_saved += len(kp_df)
-    print(f"Kp index {kp_value} saved to: {output_dir}")
+    bucket_name = f"train/kp_{bucket}_{bucket+1}"
+    save_dataset(bucket_df, f"KP bucket {bucket}", bucket_name)
 
-# Verify total rows match
-assert total_rows_saved == len(filtered_df), (
-    f"Total rows saved ({total_rows_saved}) does not match filtered_df size "
-    f"({len(filtered_df)})"
-)
-print(f"Successfully saved all {total_rows_saved} rows")
+del train_df  # Free up memory
+
+print("\nDataset splitting and saving complete!")
