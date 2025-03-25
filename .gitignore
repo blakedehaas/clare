@@ -3,3 +3,4 @@ wandb/*
 *.png
 *.tsv
 *.pyc
+dataset/output_dataset/*
