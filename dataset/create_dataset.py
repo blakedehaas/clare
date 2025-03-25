@@ -244,19 +244,10 @@ kp_df.drop_duplicates(subset='DateTime', keep='first', inplace=True)
 kp_df.set_index('DateTime', inplace=True)
 kp_df.sort_index(inplace=True)
 
-print("Expanding temporal features for Kp index...")
-kp_time_range = pd.timedelta_range(start='0h', end='72h', freq='1h')
-kp_timestamps = dt_index.values[:, None] - kp_time_range.values
-kp_timestamps = pd.DatetimeIndex(kp_timestamps.ravel()).round('h')
-kp_values = kp_df['Kp_index'].reindex(kp_timestamps).values.reshape(len(dt_index), -1)
-
-print("Creating Kp_index temporal features...")
-kp_columns = {}
-for i in range(kp_values.shape[1]):
-    kp_columns[f'Kp_index_{i}'] = kp_values[:, i]
-
-print("Concatenating Kp_index temporal features to the DataFrame...")
-filtered_df = pd.concat([filtered_df, pd.DataFrame(kp_columns, index=filtered_df.index)], axis=1)
+print("Adding instantaneous Kp index...")
+# Round filtered_df index to nearest hour to match kp_df hourly data
+rounded_index = filtered_df.index.round('H')
+filtered_df['Kp_index'] = kp_df['Kp_index'].reindex(rounded_index).values
 
 # -----------------------------------
 # Data Cleaning: Replace Invalid Values and Optimize Data Types
@@ -352,7 +343,7 @@ del test_df
 print("\nSplitting and saving training data by KP index buckets...")
 
 # Create a bucket column
-train_df['kp_bucket'] = train_df['Kp_index_0'] // 10
+train_df['kp_bucket'] = train_df['Kp_index'] // 10
 
 # Get unique buckets
 unique_buckets = sorted(train_df['kp_bucket'].unique())
@@ -360,12 +351,8 @@ print("Unique KP buckets found:", unique_buckets)
 
 # Save each bucket
 for bucket in unique_buckets:
-    bucket_df = train_df[train_df['kp_bucket'] == bucket].copy()
-    bucket_df.drop(columns=['kp_bucket'], inplace=True)  # Remove the bucket column
-    
-    bucket_name = f"train/kp_{bucket}_{bucket+1}"
+    bucket_df = train_df[train_df['kp_bucket'] == bucket].drop(columns=['kp_bucket'])
+    bucket_name = f"train/kp_{bucket}"
     save_dataset(bucket_df, f"KP bucket {bucket}", bucket_name)
-
-del train_df  # Free up memory
 
 print("\nDataset splitting and saving complete!")
