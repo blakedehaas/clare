@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader
 import pandas as pd
 import numpy as np
 import wandb
-import models
+import models.feed_forward as models
 import utils
 import time
 import datasets

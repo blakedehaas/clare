@@ -4,3 +4,4 @@ wandb/*
 *.tsv
 *.pyc
 dataset/output_dataset/*
+data/*
