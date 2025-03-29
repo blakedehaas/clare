@@ -34,7 +34,7 @@ for kp_folder in sorted(os.listdir(train_path)):
         train_datasets.append(kp_ds)
 train_ds = datasets.concatenate_datasets(train_datasets)
 
-val_ds = datasets.Dataset.load_from_disk("dataset/output_dataset/validation")
+val_ds = datasets.Dataset.load_from_disk("dataset/output_dataset/test")
 train_ds = train_ds.remove_columns(['DateTimeFormatted', 'Ne1', 'Pv1', 'Te2', 'Ne2', 'Pv2', 'Te3', 'Ne3', 'Pv3', 'I1', 'I2', 'I3'])
 val_ds = val_ds.remove_columns(['DateTimeFormatted', 'Ne1', 'Pv1', 'Te2', 'Ne2', 'Pv2', 'Te3', 'Ne3', 'Pv3', 'I1', 'I2', 'I3'])
 

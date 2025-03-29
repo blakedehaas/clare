@@ -9,6 +9,10 @@ from sklearn.model_selection import train_test_split
 import math
 import shutil
 
+# Set random seeds for reproducibility
+np.random.seed(42)
+
+
 def check_data_files():
     """Check if required data files exist and return proper paths."""
     import glob
@@ -334,7 +338,7 @@ def save_dataset(df, name, output_dir):
     print(f"Saved {len(df)} rows to {output_dir}")
 
 # Save validation and test datasets
-save_dataset(val_df, "validation", "validation")
+save_dataset(val_df, "test-storm", "test-storm")
 del val_df
 save_dataset(test_df, "test", "test")
 del test_df
