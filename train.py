@@ -14,6 +14,7 @@ import models.feed_forward as models
 import utils
 import time
 import datasets
+import constants
 
 # Hyperparameters
 batch_size = 512
@@ -34,7 +35,7 @@ for kp_folder in sorted(os.listdir(train_path)):
         train_datasets.append(kp_ds)
 train_ds = datasets.concatenate_datasets(train_datasets)
 
-val_ds = datasets.Dataset.load_from_disk("dataset/output_dataset/test")
+val_ds = datasets.Dataset.load_from_disk("dataset/output_dataset/test-normal")
 train_ds = train_ds.remove_columns(['DateTimeFormatted', 'Ne1', 'Pv1', 'Te2', 'Ne2', 'Pv2', 'Te3', 'Ne3', 'Pv3', 'I1', 'I2', 'I3'])
 val_ds = val_ds.remove_columns(['DateTimeFormatted', 'Ne1', 'Pv1', 'Te2', 'Ne2', 'Pv2', 'Te3', 'Ne3', 'Pv3', 'I1', 'I2', 'I3'])
 
@@ -43,20 +44,8 @@ all_columns = input_columns + output_columns
 assert set(train_ds.column_names) == set(all_columns), "Mismatch in columns after selection"
 assert set(val_ds.column_names) == set(all_columns), "Mismatch in columns after selection"
 
-# Normalization V2 - GCLON GMLT XXLON are sinusoidal and all the other ones should be in defined ranges
-normalizations = {
-    'Altitude': lambda x: (np.array(x, dtype=np.float32) - 4000) / 4000,  # Scale to [-1, 1]
-    'GCLON': lambda x: np.sin(np.deg2rad(np.array(x, dtype=np.float32))),  # Convert longitude to sine
-    'GCLAT': lambda x: np.array(x, dtype=np.float32) / 90,  # Scale latitude to [-1, 1]
-    'ILAT': lambda x: np.array(x, dtype=np.float32) / 90,  # Scale latitude to [-1, 1]
-    'GLAT': lambda x: np.array(x, dtype=np.float32) / 90,  # Scale latitude to [-1, 1]
-    'GMLT': lambda x: np.sin(np.array(x, dtype=np.float32) * np.pi / 12),  # Convert MLT (0-24) to sine
-    'XXLAT': lambda x: np.array(x, dtype=np.float32) / 90,  # Scale latitude to [-1, 1]
-    'XXLON': lambda x: np.sin(np.deg2rad(np.array(x, dtype=np.float32))),  # Convert longitude to sine
-}
-
 def normalize_batch(batch):
-    for col, norm_func in normalizations.items():
+    for col, norm_func in constants.NORMALIZATIONS.items():
         batch[col] = norm_func(batch[col])
     return batch
 
@@ -220,4 +209,7 @@ wandb.log({
 print('Training finished!')
 
 # Save the model
+# Create checkpoints directory if it doesn't exist
+os.makedirs('./checkpoints', exist_ok=True)
+
 torch.save(model.state_dict(), f'./checkpoints/{model_name}.pth')

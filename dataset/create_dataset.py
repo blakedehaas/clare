@@ -340,7 +340,7 @@ def save_dataset(df, name, output_dir):
 # Save validation and test datasets
 save_dataset(val_df, "test-storm", "test-storm")
 del val_df
-save_dataset(test_df, "test", "test")
+save_dataset(test_df, "test-normal", "test-normal")
 del test_df
 
 # 3. Split and save training data by KP index buckets
