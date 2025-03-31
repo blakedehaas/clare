@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import os
 import datasets
 import random
+from sklearn.metrics import r2_score, mean_squared_error
 
 random.seed(42)
 
@@ -26,6 +27,14 @@ for item in tqdm(test_ds, desc="Evaluating"):
     true_values.append(y_true)
 
 deviations = [pred - true for pred, true in zip(predictions, true_values)]
+
+# Calculate R^2 score
+r2 = r2_score(true_values, predictions)
+print(f"R^2 Score: {r2:.4f}")
+
+# Calculate RMSE
+rmse = np.sqrt(mean_squared_error(true_values, predictions))
+print(f"RMSE: {rmse:.4f}")
 
 # Calculate percentages within specified absolute deviations
 thresholds = [100, 200, 300, 500, 1000, 2000, 5000]
@@ -48,8 +57,12 @@ plt.xlabel('Deviation from Ground Truth')
 plt.ylabel('Frequency')
 plt.title('Distribution of Model Predictions Deviation')
 
-# Add text box with percentages
+# Add text box with percentages and metrics
 text = "\n".join([
+    f"R² Score: {r2:.4f}",
+    f"RMSE: {rmse:.4f}",
+    "\n"  # Add empty line
+] + [
     f"Within {threshold}: {percentage:.2f}%"
     for threshold, percentage in zip(thresholds, percentages)
 ] + ["\n"] + [  # Add an empty line between absolute and relative thresholds
