@@ -16,7 +16,7 @@ import constants
 from sklearn.metrics import r2_score, mean_squared_error
 
 model_name = '1_40'
-dataset = "test-normal" # test-storm or test-normal
+dataset = "test-storm" # test-storm or test-normal
 
 # Setting up columns
 input_columns = ['Altitude', 'GCLAT', 'GCLON', 'ILAT', 'GLAT', 'GMLT', 'XXLAT', 'XXLON', 'AL_index_0', 'AL_index_1', 'AL_index_2', 'AL_index_3', 'AL_index_4', 'AL_index_5', 'AL_index_6', 'AL_index_7', 'AL_index_8', 'AL_index_9', 'AL_index_10', 'AL_index_11', 'AL_index_12', 'AL_index_13', 'AL_index_14', 'AL_index_15', 'AL_index_16', 'AL_index_17', 'AL_index_18', 'AL_index_19', 'AL_index_20', 'AL_index_21', 'AL_index_22', 'AL_index_23', 'AL_index_24', 'AL_index_25', 'AL_index_26', 'AL_index_27', 'AL_index_28', 'AL_index_29', 'AL_index_30', 'SYM_H_0', 'SYM_H_1', 'SYM_H_2', 'SYM_H_3', 'SYM_H_4', 'SYM_H_5', 'SYM_H_6', 'SYM_H_7', 'SYM_H_8', 'SYM_H_9', 'SYM_H_10', 'SYM_H_11', 'SYM_H_12', 'SYM_H_13', 'SYM_H_14', 'SYM_H_15', 'SYM_H_16', 'SYM_H_17', 'SYM_H_18', 'SYM_H_19', 'SYM_H_20', 'SYM_H_21', 'SYM_H_22', 'SYM_H_23', 'SYM_H_24', 'SYM_H_25', 'SYM_H_26', 'SYM_H_27', 'SYM_H_28', 'SYM_H_29', 'SYM_H_30', 'SYM_H_31', 'SYM_H_32', 'SYM_H_33', 'SYM_H_34', 'SYM_H_35', 'SYM_H_36', 'SYM_H_37', 'SYM_H_38', 'SYM_H_39', 'SYM_H_40', 'SYM_H_41', 'SYM_H_42', 'SYM_H_43', 'SYM_H_44', 'SYM_H_45', 'SYM_H_46', 'SYM_H_47', 'SYM_H_48', 'SYM_H_49', 'SYM_H_50', 'SYM_H_51', 'SYM_H_52', 'SYM_H_53', 'SYM_H_54', 'SYM_H_55', 'SYM_H_56', 'SYM_H_57', 'SYM_H_58', 'SYM_H_59', 'SYM_H_60', 'SYM_H_61', 'SYM_H_62', 'SYM_H_63', 'SYM_H_64', 'SYM_H_65', 'SYM_H_66', 'SYM_H_67', 'SYM_H_68', 'SYM_H_69', 'SYM_H_70', 'SYM_H_71', 'SYM_H_72', 'SYM_H_73', 'SYM_H_74', 'SYM_H_75', 'SYM_H_76', 'SYM_H_77', 'SYM_H_78', 'SYM_H_79', 'SYM_H_80', 'SYM_H_81', 'SYM_H_82', 'SYM_H_83', 'SYM_H_84', 'SYM_H_85', 'SYM_H_86', 'SYM_H_87', 'SYM_H_88', 'SYM_H_89', 'SYM_H_90', 'SYM_H_91', 'SYM_H_92', 'SYM_H_93', 'SYM_H_94', 'SYM_H_95', 'SYM_H_96', 'SYM_H_97', 'SYM_H_98', 'SYM_H_99', 'SYM_H_100', 'SYM_H_101', 'SYM_H_102', 'SYM_H_103', 'SYM_H_104', 'SYM_H_105', 'SYM_H_106', 'SYM_H_107', 'SYM_H_108', 'SYM_H_109', 'SYM_H_110', 'SYM_H_111', 'SYM_H_112', 'SYM_H_113', 'SYM_H_114', 'SYM_H_115', 'SYM_H_116', 'SYM_H_117', 'SYM_H_118', 'SYM_H_119', 'SYM_H_120', 'SYM_H_121', 'SYM_H_122', 'SYM_H_123', 'SYM_H_124', 'SYM_H_125', 'SYM_H_126', 'SYM_H_127', 'SYM_H_128', 'SYM_H_129', 'SYM_H_130', 'SYM_H_131', 'SYM_H_132', 'SYM_H_133', 'SYM_H_134', 'SYM_H_135', 'SYM_H_136', 'SYM_H_137', 'SYM_H_138', 'SYM_H_139', 'SYM_H_140', 'SYM_H_141', 'SYM_H_142', 'SYM_H_143', 'SYM_H_144', 'f107_index_0', 'f107_index_1', 'f107_index_2', 'f107_index_3', 'Kp_index']
@@ -97,7 +97,7 @@ def custom_collate(batch):
 
 test_loader = DataLoader(test_ds, batch_size=512, shuffle=False, num_workers=os.cpu_count(), collate_fn=custom_collate)
 
-predictions, true_values, stds_list, times = [], [], [], []
+predictions, true_values, entropy_list, times = [], [], [], []
 
 with torch.no_grad():
     for batch in tqdm(test_loader, desc="Evaluating"):
@@ -107,10 +107,10 @@ with torch.no_grad():
         # Forward pass
         logits = model(x)
 
-        # Calculate std dev and mean of softmaxed logits
+        # Calculate entropy of softmaxed logits
         softmaxed = torch.softmax(logits, dim=1)  # Apply softmax to logits
-        std = torch.std(softmaxed, dim=1).cpu().numpy()    # Std across batch dimension
-        stds_list.extend(std)  # Use extend instead of append to flatten the array
+        entropy = -torch.sum(softmaxed * torch.log(softmaxed + 1e-10), dim=1).cpu().numpy()  # Calculate entropy
+        entropy_list.extend(entropy)  # Use extend instead of append to flatten the array
 
         y_pred = torch.argmax(logits, dim=1) * 100 + 50
         y_true = y
@@ -129,10 +129,10 @@ print(f"R^2 Score: {r2:.4f}")
 rmse = np.sqrt(mean_squared_error(true_values, predictions))
 print(f"RMSE: {rmse:.4f}")
 
-# Calculate standard deviation metrics
-mean_std = np.mean(stds_list)
-print(f"\nStandard Deviation Metrics:")
-print(f"Mean std across test set: {mean_std:.4f}")
+# Calculate entropy metrics
+mean_entropy = np.mean(entropy_list)
+print(f"\nEntropy Metrics:")
+print(f"Mean entropy across test set: {mean_entropy:.4f}")
 
 # Calculate percentages within specified absolute deviations
 thresholds = [100, 200, 300, 500, 1000, 2000, 5000]
@@ -159,7 +159,7 @@ plt.title('Distribution of Model Predictions Deviation')
 text = "\n".join([
     f"R² Score: {r2:.4f}",
     f"RMSE: {rmse:.4f}",
-    f"Mean std: {mean_std:.4f}",
+    f"Mean entropy: {mean_entropy:.4f}",
     "\n"  # Add empty line
 ] + [
     f"Within {threshold}: {percentage:.2f}%"
