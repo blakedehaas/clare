@@ -12,7 +12,7 @@ from sklearn.metrics import r2_score, mean_squared_error
 random.seed(42)
 
 # Load dataset
-dataset = "test-storm" # test-storm or test-normal
+dataset = "test-normal" # test-storm or test-normal
 test_ds = datasets.Dataset.load_from_disk(f"dataset/output_dataset/{dataset}")
 test_ds = test_ds.remove_columns([col for col in test_ds.column_names if col != 'Te1'])
 
