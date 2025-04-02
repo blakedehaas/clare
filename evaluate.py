@@ -23,6 +23,7 @@ input_columns = ['Altitude', 'GCLAT', 'GCLON', 'ILAT', 'GLAT', 'GMLT', 'XXLAT', 
 output_columns = ['Te1']
 all_columns = input_columns + output_columns
 
+
 # Model
 input_size = len(input_columns)
 hidden_size = 2048
