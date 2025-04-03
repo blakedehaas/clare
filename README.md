@@ -1,4 +1,4 @@
-# CLARE: A novel classification-regression network for plasmasphere electron temperature prediction
+# CLARE: Novel binned classification-regression network for plasmasphere electron temperature
 
 TODO: Add short description and link to the paper
 
