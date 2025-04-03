@@ -177,7 +177,7 @@ plt.text(0.95, 0.95, text, transform=plt.gca().transAxes,
 plt.tight_layout()
 
 # Save the plot
-plt.savefig(f'./checkpoints/{model_name}_deviation.png')
+plt.savefig(f'./checkpoints/{model_name}_{dataset}_plot.png')
 plt.close()  # Close the figure to free up memory
 
 # Plot absolute deviation vs ground truth
@@ -202,5 +202,5 @@ mean_deviation = np.mean(deviations)
 print(f"Mean Deviation: {mean_deviation:.3f}")
 
 plt.tight_layout()
-plt.savefig(f'./checkpoints/{model_name}_deviation_vs_truth.png', dpi=300)
+plt.savefig(f'./checkpoints/{model_name}_{dataset}_deviation_plot.png', dpi=300)
 plt.close()
