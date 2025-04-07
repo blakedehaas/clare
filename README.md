@@ -1,4 +1,4 @@
-# CLARE: Novel binned classification-regression network for plasmasphere electron temperature
+# CLARE: CLARE: Binned Classification Neural Network for Electron Temperature Prediction
 
 TODO: Add short description and link to the paper
 
