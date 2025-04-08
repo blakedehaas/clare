@@ -1,5 +1,12 @@
+# requirements.txt
+
+datasets
+matplotlib
 numpy
 pandas
-tqdm
-datasets
 pyarrow
+scikit-learn
+scipy
+torch
+tqdm
+wandb
