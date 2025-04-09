@@ -31,16 +31,11 @@ Electron Temperature Prediction (Google Docs Link)](https://docs.google.com/docu
 
 ## Prerequisites
 
-Before you begin, ensure you have the following installed:
+Before you begin, set up the following:
 
-
-1.  **Python:** Required for using the repository.
+1.  **Python:** Required for using the repository, download version 3.9 or above.
     *   [Download Python](https://www.python.org/downloads/)
-2.  **GitHub Account & SSH Key (Recommended for Cloning):** Needed to clone the repository using SSH. Alternatively, you can use HTTPS.
-    *   [Connecting to GitHub with SSH](https://docs.github.com/en/authentication/connecting-to-github-with-ssh)
-3.  **Git:** Required for cloning the repository.
-    *   [Download Git](https://git-scm.com/downloads)
-4.  **Weights & Biases Account:** Required for experiment tracking and model management.
+2.  **(Optional) Weights & Biases Account:** Optional for experiment tracking and model management.
     *   [Sign up at Weights & Biases](https://wandb.ai/site)
 
 ---
@@ -71,8 +66,8 @@ Follow these steps to set up the project environment:
     pip install -r requirements.txt
     ```
 
-3.  **Set up Weights & Biases:**
-    Log in to your Weights & Biases account from the command line. You will be prompted to enter your API key (found on your W&B profile settings page):
+3.  **(Optional) Set up Weights & Biases:**
+    If using Weights & Biases, log in to your Weights & Biases account from the command line. You will be prompted to enter your API key (found on your W&B profile settings page):
     ```bash
     wandb login
     ```
