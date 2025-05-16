@@ -1,5 +1,5 @@
 """
-Simple example of how to run the Titheridge model.
+Simple example of how to run the Titheridge Equation 13 model.
 
 Used to verify correctionness against the paper.
 """
