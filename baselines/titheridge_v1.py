@@ -1,39 +1,15 @@
 """
 Evaluate titheridge model on the test set using Equation 19 from the paper.
 
-- Calculates Te1 value using the titheridge v1 model with the T_0 and G_0 values from the paper
+- Calculates T_0 and G_0 value using the titheridge v1 model with the day/night coefficients from the paper
+- We use different coefficients based on whether it is night or day
+- We use GLAT as a proxy for s_L
 
 Paper: https://agupubs.onlinelibrary.wiley.com/doi/epdf/10.1029/97JA03031
 """
 import datasets
-
-
-coeffs = {
-    "Day T_0": [1230, 2200, -3290, -0.26, -0.68],
-    "Day G_0": [4.65, -8.55, 4.14, -2.16, 1.45],
-    "Night T_0": [985, -963, 1125, -0.60, 0.10],
-    "Night G_0": [0.756, -0.88, 0.29, -2.63, 1.84]
-}
-
-def X(s_L, a0, a1, a2, a3, a4):
-    numerator = a0 + a1 * s_L + a2 * s_L**2
-    denominator = 1 + a3 * s_L + a4 * s_L**2
-    return numerator / denominator
-
-ds = datasets.load_from_disk('/home/michael/auroral-precipitation-ml/dataset/output_dataset/test-normal')
-
-import IPython; IPython.embed()
-
-exit()
 import numpy as np
-import iricore
-from datetime import datetime
-import numpy as np
-import matplotlib.pyplot as plt
-import datasets
 import os
-
-iricore.update() # Updates indicies
 
 # Function to calculate B(h) using equation (13b)
 def B_h(h, h0, L, R0):
@@ -47,91 +23,73 @@ def Te_h(h, T0, Bh, G0, h0, heq, R0, Rh):
     inner_expression = 1 + Bh * (G0 / T0) * (term1 - term2)
     return T0 * (inner_expression)**(2/7)
 
-# For each timestep, get the G0 value that best matches against the IRI model then use that value to calculate the Titheridge prediction + IRI prediction.
-ds = datasets.load_from_disk('/home/michael/auroral-precipitation-ml/dataset/output_dataset/test-normal')
+coeffs = {
+    "Day T_0": [1230, 2200, -3290, -0.26, -0.68],
+    "Day G_0": [4.65, -8.55, 4.14, -2.16, 1.45],
+    "Night T_0": [985, -963, 1125, -0.60, 0.10],
+    "Night G_0": [0.756, -0.88, 0.29, -2.63, 1.84]
+}
 
-# Constants
+def X(s_L, a0, a1, a2, a3, a4):
+    numerator = a0 + a1 * s_L + a2 * s_L**2
+    denominator = 1 + a3 * s_L + a4 * s_L**2
+    return numerator / denominator
+
+# Load dataset
+ds = datasets.load_from_disk('/home/michael/auroral-precipitation-ml/dataset/output_dataset/test-storm')
+
+import pandas as pd
+
+def is_day_or_night(time_str):
+    # Convert the time string to a datetime object
+    time = pd.to_datetime(time_str)
+    hour = time.hour
+    
+    if 9 <= hour < 16:
+        return 'Day'
+    elif (hour >= 21) or (hour < 4):
+        return 'Night'
+    else:
+        return 'Transition'
+
+# Filter out rows where it is neither day nor night. TODO: Check if we should do diurnal transition stuff.
+original_size = len(ds)
+print(f"Original size: {original_size}")
+ds = ds.filter(lambda x: is_day_or_night(x['DateTimeFormatted']) in ['Day', 'Night'])
+filtered_size = len(ds)
+print(f"Filtered size: {filtered_size}")
+
+# Calculate s_L, T_0, and G_0 for each row using max cores
+ds = ds.map(lambda x: {
+    's_L': np.sin(np.radians(x['GLAT']))**2,
+    'T_0': X(np.sin(np.radians(x['GLAT']))**2, *coeffs[is_day_or_night(x['DateTimeFormatted']) + " T_0"]),
+    'G_0': X(np.sin(np.radians(x['GLAT']))**2, *coeffs[is_day_or_night(x['DateTimeFormatted']) + " G_0"])
+}, num_proc=os.cpu_count())
+
+# Calculate Te1 using Equation 13
 h0 = 400   # Reference height (km)
 Re = 6371  # Earth radius (km)
 R0 = 1 + h0/Re  # Radius at reference altitude (Earth radius + h0, km)
+def calculate_Te(batch):
+    # Extract the necessary values from the batch
+    T0 = batch['T_0']
+    G0 = batch['G_0']
+    ILAT = batch['ILAT']
+    h = batch['Altitude']
 
-def calculate_IRI2020_predictions(batch):
-    # Extract datetime and coordinates from the batch
-    dt = batch['DateTimeFormatted']
-    lat, lon = batch['XXLAT'], batch['XXLON']
-
-    # Convert pandas timestamp to datetime UTC
-    dt = dt.to_pydatetime()
-
-    # Run IRI model for this location and time
-    altrange = [400, 2000, 100]  # Altitude range in km
-    out = iricore.iri(dt, altrange, lat, lon, version=20)
-    
-    # Store the electron temperature from IRI
-    batch['IRI2020_range'] = out.etemp.tolist()
-    
-    return batch
-
-# Map the function across the dataset
-ds = ds.map(calculate_IRI2020_predictions, num_proc=os.cpu_count())
-
-# For what value of G0 does the Titheridge model best fit the IRI model?
-def calculate_g0(batch):
-    T0 = batch["IRI2020_range"][0] # First value is 400km reference value
-    ILAT = batch["ILAT"]
     ILAT_rad = np.radians(ILAT)
     # heq: we can derive it from L-shell which we can derive from ILAT.
     L = 1 / (np.cos(ILAT_rad)**2) # L-shell parameter / "normal field line parameter"
     heq = (L - 1) * Re # Height at the top of the field line (km).
-
-    # Search through the G0 space
-    G0_search_space = np.linspace(-20.0, 50.0, 701)
-    altrange = np.arange(400, 2100, 100)  # Altitude range in km
-    current_lowest_squared_error = float('inf')
-    best_G0 = None
-    for G0 in G0_search_space:
-        Te_list = []
-        for alt in altrange:
-            h = alt
-            Rh = 1 + h/Re  # Radius at altitude h (km)
-            
-            Bh = B_h(h, h0, L, R0)
-            Te = Te_h(h, T0, Bh, G0, h0, heq, R0, Rh)
-            Te_list.append(Te)
-
-        # Compute total square error against IRI2020_range
-        total_squared_error = 0
-        for iri_val, titheridge_val in zip(batch["IRI2020_range"], Te_list):
-            squared_error = (iri_val - titheridge_val) ** 2
-            total_squared_error += squared_error
-
-        if total_squared_error < current_lowest_squared_error:
-            current_lowest_squared_error = squared_error
-            best_G0 = G0
-
-    # Round to closest 0.1
-    best_G0 = round(best_G0, 1)
-
-    # Update the batch with the best G0 value
-    batch['z_best_G0'] = best_G0
-
-    # Update T0 value with IRI model prediction
-    batch['z_iri_reference_T0'] = T0
-
-    # Calculate the actual Titheridge model prediction using the best G0 value
-    h = batch["Altitude"]
+    
     Rh = 1 + h/Re  # Radius at altitude h (km)
-    G0 = best_G0
     Bh = B_h(h, h0, L, R0)
     Te = Te_h(h, T0, Bh, G0, h0, heq, R0, Rh)
 
     batch["z_titheridge_Te"] = Te
     return batch
 
-ds = ds.map(calculate_g0, num_proc=os.cpu_count())
-
-# Remove the IRI2020_range column since we no longer need it
-ds = ds.remove_columns(['IRI2020_range'])
+ds = ds.map(calculate_Te, num_proc=os.cpu_count())
 
 # Save the dataset to disk
-ds.save_to_disk("/home/michael/auroral-precipitation-ml/dataset/output_dataset/test-normal-baseline-ready")
+ds.save_to_disk("/home/michael/auroral-precipitation-ml/dataset/output_dataset/test-storm-baseline-v1-ready")
