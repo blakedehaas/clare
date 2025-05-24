@@ -10,6 +10,7 @@ Paper: https://agupubs.onlinelibrary.wiley.com/doi/epdf/10.1029/97JA03031
 import datasets
 import numpy as np
 import os
+import pandas as pd
 
 # Function to calculate B(h) using equation (13b)
 def B_h(h, h0, L, R0):
@@ -38,7 +39,6 @@ def X(s_L, a0, a1, a2, a3, a4):
 # Load dataset
 ds = datasets.load_from_disk('/home/michael/auroral-precipitation-ml/dataset/output_dataset/test-storm')
 
-import pandas as pd
 
 def is_day_or_night(time_str):
     # Convert the time string to a datetime object
