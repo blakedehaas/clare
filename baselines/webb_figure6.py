@@ -241,10 +241,10 @@ for ILAT in ILAT_values:
 
     # Create the plot
     plt.figure(figsize=(10, 6))
-    plt.plot(daytime_Te_values_v1, h_values, label='V1 Daytime Te', color='blue')
-    plt.plot(nighttime_Te_values_v1, h_values, label='V1 Nighttime Te', color='red')
-    plt.plot(daytime_Te_values_v2, h_values, label='V2 Daytime Te', linestyle='--', color='blue')
-    plt.plot(nighttime_Te_values_v2, h_values, label='V2 Nighttime Te', linestyle='--', color='red')
+    plt.plot(daytime_Te_values_v1, h_values, label='Titheridge Daytime Te', color='blue')
+    plt.plot(nighttime_Te_values_v1, h_values, label='Titheridge Nighttime Te', color='red')
+    plt.plot(daytime_Te_values_v2, h_values, label='Titheridge-IRI Daytime Te', linestyle='--', color='blue')
+    plt.plot(nighttime_Te_values_v2, h_values, label='Titheridge-IRI Nighttime Te', linestyle='--', color='red')
 
     plt.yscale('log')  # Set y-axis to log scale
     tick_locations = [500, 1000, 1500, 2000, 3000, 4000, 5000]
