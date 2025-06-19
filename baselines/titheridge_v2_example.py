@@ -1,7 +1,7 @@
 """
 Simple example of how to run the Titheridge Equation 13 model.
 
-Used to verify correctionness against the paper.
+Used to verify correctioness against the paper.
 """
 import numpy as np
 

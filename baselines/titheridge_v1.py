@@ -3,7 +3,6 @@ Evaluate titheridge model on the test set using Equation 19 from the paper.
 
 - Calculates T_0 and G_0 value using the titheridge v1 model with the day/night coefficients from the paper
 - We use different coefficients based on whether it is night or day
-- We use GLAT as a proxy for s_L
 
 Paper: https://agupubs.onlinelibrary.wiley.com/doi/epdf/10.1029/97JA03031
 """
@@ -52,18 +51,40 @@ def is_day_or_night(time_str):
     else:
         return 'Transition'
 
-# Filter out rows where it is neither day nor night. TODO: Check if we should do diurnal transition stuff.
+# Filter out rows where it is neither day nor night.
 original_size = len(ds)
 print(f"Original size: {original_size}")
 ds = ds.filter(lambda x: is_day_or_night(x['DateTimeFormatted']) in ['Day', 'Night'])
 filtered_size = len(ds)
 print(f"Filtered size: {filtered_size}")
 
+def calculate_s_L(glat, altitude):
+    """
+    Calculate s_L using the ionospheric latitude formula from Webb et al. 2003.
+    
+    Args:
+        glat: Geomagnetic latitude in degrees
+        altitude: Altitude in km
+    
+    Returns:
+        s_L: sin²(Lat₃₀₀)
+    """
+    # Convert GLAT to radians
+    glat_rad = np.radians(glat)
+    
+    # Calculate X = (6670 * cos²φ) / (6370 + h)
+    X = (6670 * np.cos(glat_rad)**2) / (6370 + altitude)
+    
+    # Calculate s_L = sin²(arccos(√X))
+    s_L = np.sin(np.arccos(np.sqrt(X)))**2
+    
+    return s_L
+
 # Calculate s_L, T_0, and G_0 for each row using max cores
 ds = ds.map(lambda x: {
-    's_L': np.sin(np.radians(x['GLAT']))**2,
-    'T_0': X(np.sin(np.radians(x['GLAT']))**2, *coeffs[is_day_or_night(x['DateTimeFormatted']) + " T_0"]),
-    'G_0': X(np.sin(np.radians(x['GLAT']))**2, *coeffs[is_day_or_night(x['DateTimeFormatted']) + " G_0"])
+    's_L': calculate_s_L(x['GLAT'], x['Altitude']),
+    'T_0': X(calculate_s_L(x['GLAT'], x['Altitude']), *coeffs[is_day_or_night(x['DateTimeFormatted']) + " T_0"]),
+    'G_0': X(calculate_s_L(x['GLAT'], x['Altitude']), *coeffs[is_day_or_night(x['DateTimeFormatted']) + " G_0"])
 }, num_proc=os.cpu_count())
 
 # Calculate Te1 using Equation 13
@@ -92,4 +113,4 @@ def calculate_Te(batch):
 ds = ds.map(calculate_Te, num_proc=os.cpu_count())
 
 # Save the dataset to disk
-ds.save_to_disk("/home/michael/auroral-precipitation-ml/dataset/output_dataset/test-storm-baseline-v1-ready")
+ds.save_to_disk("dataset/output_dataset/test-storm-baseline-v1-ready")
