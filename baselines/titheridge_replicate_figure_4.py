@@ -1,8 +1,7 @@
 
 """
-Simple example of how to run the Titheridge model.
-
-Used to verify correctionness against the paper.
+"Replicating Figure 4c of Titheridge paper for verification
+https://agupubs.onlinelibrary.wiley.com/doi/epdf/10.1029/97JA03031"
 """
 import numpy as np
 import matplotlib.pyplot as plt
@@ -50,5 +49,5 @@ plt.xlabel('Electron Temperature (K)')
 plt.ylabel('Height (km)')
 plt.title(f'Height vs Electron Temperature at {ILAT}° Latitude')
 plt.grid(True)
-plt.savefig('figure_4.png')
+plt.savefig('./figure_4.png')
 plt.close()
