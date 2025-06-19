@@ -10,8 +10,6 @@ Paper: https://agupubs.onlinelibrary.wiley.com/doi/epdf/10.1029/97JA03031
 import numpy as np
 import iricore
 from datetime import datetime
-import numpy as np
-import matplotlib.pyplot as plt
 import datasets
 import os
 
@@ -30,7 +28,7 @@ def Te_h(h, T0, Bh, G0, h0, heq, R0, Rh):
     return T0 * (inner_expression)**(2/7)
 
 # For each timestep, get the G0 value that best matches against the IRI model then use that value to calculate the Titheridge prediction + IRI prediction.
-ds = datasets.load_from_disk('/home/michael/auroral-precipitation-ml/dataset/output_dataset/test-normal')
+ds = datasets.load_from_disk('dataset/output_dataset/test-normal')
 
 # Constants
 h0 = 400   # Reference height (km)
@@ -88,7 +86,7 @@ def calculate_g0(batch):
             total_squared_error += squared_error
 
         if total_squared_error < current_lowest_squared_error:
-            current_lowest_squared_error = squared_error
+            current_lowest_squared_error = total_squared_error
             best_G0 = G0
 
     # Round to closest 0.1
@@ -116,4 +114,4 @@ ds = ds.map(calculate_g0, num_proc=os.cpu_count())
 ds = ds.remove_columns(['IRI2020_range'])
 
 # Save the dataset to disk
-ds.save_to_disk("/home/michael/auroral-precipitation-ml/dataset/output_dataset/test-normal-baseline-ready")
+ds.save_to_disk("dataset/output_dataset/test-normal-baseline-ready")
