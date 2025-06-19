@@ -36,7 +36,7 @@ def X(s_L, a0, a1, a2, a3, a4):
     return numerator / denominator
 
 # Load dataset
-ds = datasets.load_from_disk('/home/michael/auroral-precipitation-ml/dataset/output_dataset/test-storm')
+ds = datasets.load_from_disk('../dataset/output_dataset/test-storm')
 
 
 def is_day_or_night(time_str):
@@ -113,4 +113,4 @@ def calculate_Te(batch):
 ds = ds.map(calculate_Te, num_proc=os.cpu_count())
 
 # Save the dataset to disk
-ds.save_to_disk("dataset/output_dataset/test-storm-baseline-v1-ready")
+ds.save_to_disk("../dataset/output_dataset/test-storm-baseline-v1-diurnal-filtered-ready")

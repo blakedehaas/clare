@@ -28,7 +28,7 @@ def Te_h(h, T0, Bh, G0, h0, heq, R0, Rh):
     return T0 * (inner_expression)**(2/7)
 
 # For each timestep, get the G0 value that best matches against the IRI model then use that value to calculate the Titheridge prediction + IRI prediction.
-ds = datasets.load_from_disk('dataset/output_dataset/test-normal')
+ds = datasets.load_from_disk('../dataset/output_dataset/test-normal')
 
 # Constants
 h0 = 400   # Reference height (km)
@@ -114,4 +114,4 @@ ds = ds.map(calculate_g0, num_proc=os.cpu_count())
 ds = ds.remove_columns(['IRI2020_range'])
 
 # Save the dataset to disk
-ds.save_to_disk("dataset/output_dataset/test-normal-baseline-ready")
+ds.save_to_disk("../dataset/output_dataset/test-normal-baseline-v2-ready")
