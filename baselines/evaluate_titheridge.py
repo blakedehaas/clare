@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 import scipy
 
-ds = datasets.load_from_disk('/home/michael/auroral-precipitation-ml/dataset/output_dataset/test-normal-baseline-ready')
+ds = datasets.load_from_disk('dataset/output_dataset/test-normal-baseline-ready')
 
 # Remove rows where z_titheridge_Te is nan
 print(f"Dataset size before filtering: {len(ds)}")
@@ -79,7 +79,7 @@ plt.text(0.95, 0.95, text, transform=plt.gca().transAxes,
 plt.tight_layout()
 
 # Save the plot
-plt.savefig(f'../checkpoints/titheridge_plot.png')
+plt.savefig(f'./titheridge_plot.png')
 plt.close()  # Close the figure to free up memory
 
 # Plot absolute deviation vs ground truth
@@ -104,5 +104,5 @@ mean_deviation = np.mean(deviations)
 print(f"Mean Deviation: {mean_deviation:.3f}")
 
 plt.tight_layout()
-plt.savefig(f'../checkpoints/titheridge_deviation_plot.png', dpi=300)
+plt.savefig(f'./titheridge_deviation_plot.png', dpi=300)
 plt.close()
