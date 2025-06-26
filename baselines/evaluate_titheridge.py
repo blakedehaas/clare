@@ -1,31 +1,33 @@
 """
-Baseline performance with random guessing
+Evaluate the performance of Titheridge against the test set targets, calculate the same metrics as `evaluate.py`
 """
+import datasets
 from tqdm import tqdm
+import os
+from sklearn.metrics import r2_score, mean_squared_error
 import numpy as np
 import matplotlib.pyplot as plt
-import os
-import datasets
-import random
-from sklearn.metrics import r2_score, mean_squared_error
+from matplotlib.colors import LogNorm
+import scipy
 
-random.seed(42)
+ds = datasets.load_from_disk('dataset/output_dataset/test-normal-baseline-ready')
 
-# Load dataset
-dataset = "test-normal" # test-storm or test-normal
-test_ds = datasets.Dataset.load_from_disk(f"dataset/output_dataset/{dataset}")
-test_ds = test_ds.remove_columns([col for col in test_ds.column_names if col != 'Te1'])
+# Remove rows where z_titheridge_Te is nan
+print(f"Dataset size before filtering: {len(ds)}")
+ds = ds.filter(lambda x: not np.isnan(x['z_titheridge_Te']))
+print(f"Dataset size after filtering: {len(ds)}")
 
-predictions, true_values = [], []
+def extract_predictions_and_truth(batch):
+    return {
+        'predictions': batch['z_titheridge_Te'],
+        'true_values': batch['Te1']
+    }
 
-for item in tqdm(test_ds, desc="Evaluating"):
-    y_true = item["Te1"]
-    
-    # Generate random prediction between 0 and 15000
-    y_pred = random.uniform(0, 15000)
-    predictions.append(int(y_pred))
-    true_values.append(y_true)
+results = ds.map(extract_predictions_and_truth, num_proc=os.cpu_count())
+predictions = results['predictions']
+true_values = results['true_values']
 
+# Calculate metrics and plots
 deviations = [pred - true for pred, true in zip(predictions, true_values)]
 
 # Calculate R^2 score
@@ -77,5 +79,30 @@ plt.text(0.95, 0.95, text, transform=plt.gca().transAxes,
 plt.tight_layout()
 
 # Save the plot
-plt.savefig(f'./checkpoints/{dataset}_baseline_deviation.png')
+plt.savefig(f'./titheridge_plot.png')
 plt.close()  # Close the figure to free up memory
+
+# Plot absolute deviation vs ground truth
+plt.figure(figsize=(10, 8))
+
+h = plt.hist2d(true_values, deviations, bins=100, norm=LogNorm(), cmap='viridis')
+plt.colorbar(h[3], label='Obs#')
+
+plt.xlabel('Te$_{obs}$ [K]')
+plt.ylabel('Te$_{model}$ - Te$_{obs}$ [K]')
+plt.title('Model Deviation vs Ground Truth')
+
+# Add mean deviation line and print the mean deviation value
+bin_means, bin_edges, _ = scipy.stats.binned_statistic(true_values, deviations,
+                                                statistic='mean', bins=50)
+bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+plt.plot(bin_centers, bin_means, 'r-', linewidth=2, label='Mean Deviation')
+plt.legend()
+
+# Calculate and print the mean deviation value
+mean_deviation = np.mean(deviations)
+print(f"Mean Deviation: {mean_deviation:.3f}")
+
+plt.tight_layout()
+plt.savefig(f'./titheridge_deviation_plot.png', dpi=300)
+plt.close()
