@@ -12,6 +12,12 @@ import shutil
 # Set random seeds for reproducibility
 np.random.seed(42)
 
+# CONFIGURATION
+base_output_dir = "processed_dataset"
+storm_validation_start = '1991-05-16' # Inclusive start date of the solar storm period
+storm_validation_end = '1991-05-21'  # Exclusive end date of the solar storm period
+test_normal_size = 50000  # Number of rows for the test set
+
 
 def check_data_files():
     """Check if required data files exist and return proper paths."""
@@ -303,8 +309,6 @@ invalid_value_report = replace_and_count_invalid_values(filtered_df, invalid_val
 # -----------------------------------
 print("\nSplitting the dataset into training, validation, and test sets...")
 
-# Define output paths
-base_output_dir = "output_dataset"
 
 # Clean up existing output directory
 if os.path.exists(base_output_dir):
@@ -313,18 +317,16 @@ if os.path.exists(base_output_dir):
 
 os.makedirs(base_output_dir, exist_ok=True)
 
-# 1. Extract the June 1991 solar storm period for validation
-validation_start = '1991-06-02'
-validation_end = '1991-06-08'  # Exclusive end date
-val_mask = (filtered_df.index >= validation_start) & (filtered_df.index < validation_end)
+# 1. Extract the May 1991 solar storm period for validation # Start date of the solar storm period
+val_mask = (filtered_df.index >= storm_validation_start) & (filtered_df.index < storm_validation_end)
 val_df = filtered_df.loc[val_mask].copy()
 remaining_df = filtered_df.loc[~val_mask].copy()
 del filtered_df  # Free up memory
 
-print(f"Extracted {len(val_df)} rows for validation (June 1991 solar storm period)")
+print(f"Extracted {len(val_df)} rows for validation (May 1991 solar storm period)")
 
 # 2. Split remaining data to get test set (50,000 rows)
-train_df, test_df = train_test_split(remaining_df, test_size=50000, random_state=42)
+train_df, test_df = train_test_split(remaining_df, test_size=test_normal_size, random_state=42)
 del remaining_df  # Free up memory
 
 print(f"Split remaining data into {len(train_df)} training rows and {len(test_df)} test rows")
@@ -343,20 +345,14 @@ del val_df
 save_dataset(test_df, "test-normal", "test-normal")
 del test_df
 
-# 3. Split and save training data by KP index buckets
-print("\nSplitting and saving training data by KP index buckets...")
+# 3. Save the training dataset in chunks of 250,000 rows
+chunk_size = 250_000 # Adjust this if you have memory issues
+num_chunks = (len(train_df) + chunk_size - 1) // chunk_size
 
-# Create a bucket column
-train_df['kp_bucket'] = train_df['Kp_index'] // 10
+for i in range(num_chunks):
+    chunk_df = train_df.iloc[i*chunk_size : (i+1)*chunk_size]
+    chunk_name = f"train_chunk_{i+1}"
+    chunk_dir = os.path.join("train_chunks", chunk_name)
+    save_dataset(chunk_df, chunk_name, chunk_dir)
 
-# Get unique buckets
-unique_buckets = sorted(train_df['kp_bucket'].unique())
-print("Unique KP buckets found:", unique_buckets)
-
-# Save each bucket
-for bucket in unique_buckets:
-    bucket_df = train_df[train_df['kp_bucket'] == bucket].drop(columns=['kp_bucket'])
-    bucket_name = f"train/kp_{bucket}"
-    save_dataset(bucket_df, f"KP bucket {bucket}", bucket_name)
-
-print("\nDataset splitting and saving complete!")
+print(f"\nDataset saving complete! Saved {num_chunks} training chunks of up to {chunk_size} rows each.")
