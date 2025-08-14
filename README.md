@@ -114,7 +114,7 @@ Train the CLARE model using the prepared datasets:
         ```
     *   Training progress will be logged to your terminal and to Weights & Biases under the project `clare`.
     *   The trained model checkpoint (`.pth` file) will be saved to `clare/checkpoints/` using the specified `model_name`.
-    *   Normalization statistics (e.g., mean, std) used during training will be saved to `clare/data/` using the specified `model_name`.
+    *   Normalization statistics (e.g., mean, std) used during training will be saved to `clare/checkpoints/` using the specified `model_name`.
 
 ---
 
