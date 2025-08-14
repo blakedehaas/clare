@@ -3,5 +3,7 @@ wandb/*
 *.png
 *.tsv
 *.pyc
-dataset/output_dataset/*
+dataset/processed_dataset/*
+dataset/processed_dataset/*
 data/*
+archive/*
