@@ -13,9 +13,9 @@ import shutil
 np.random.seed(42)
 
 # CONFIGURATION
-base_output_dir = "processed_dataset"
-storm_validation_start = '1991-05-16' # Inclusive start date of the solar storm period
-storm_validation_end = '1991-05-21'  # Exclusive end date of the solar storm period
+base_output_dir = "processed_dataset_01_31_storm"
+storm_validation_start = '1991-01-31' # Inclusive start date of the solar storm period
+storm_validation_end = '1991-02-07'  # Exclusive end date of the solar storm period
 test_normal_size = 50000  # Number of rows for the test set
 
 
