@@ -13,7 +13,7 @@ import constants
 from sklearn.metrics import r2_score, mean_squared_error
 
 # --------- CONFIG -----------------
-model_name = '1_46'
+model_name = '1_47'
 dataset = "test-normal" # test-storm or test-normal
 # -------------------------
 
