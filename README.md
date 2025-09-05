@@ -54,8 +54,16 @@ Follow these steps to set up the project environment:
     ```bash
     cd clare
     ```
+    Install Git Large File Storage:
+    ```bash
+    git lfs install
+    ```
+    Download the model checkpoint using Git Large File Storage:
+    ```bash
+    git lfs pull
+    ```
 
-2.  **Install Dependencies:**
+3.  **Install Dependencies:**
     Install all the required Python packages using pip and the `requirements.txt` file:
     ```bash
     pip install -r requirements.txt
