@@ -1,0 +1,44 @@
+#!/bin/bash
+#PBS -N pred_synthetic_heatmap_job
+#PBS -A UCUL0008
+#PBS -l select=1:ncpus=4:mem=64GB:ngpus=1
+#PBS -l walltime=24:00:00
+#PBS -q casper
+#PBS -j oe
+#PBS -m abe
+#PBS -M blake.dehaas@lasp.colorado.edu
+
+# Load NCAR's shared conda module
+module purge
+module load conda
+
+# Define your custom environment name
+ENV_NAME="aurora_env"
+
+# Check if the environment exists; if not, create it
+if ! conda info --envs | grep -q "^$ENV_NAME "; then
+    echo "[INFO] Creating conda environment: $ENV_NAME by cloning npl"
+    conda create --name "$ENV_NAME" --clone npl -y
+else
+    echo "[INFO] Found existing conda environment: $ENV_NAME"
+fi
+
+# Activate the environment. Sourcing is often more reliable in scripts.
+source conda_hook
+conda activate "$ENV_NAME"
+
+# Install packages (this will also update if they are already installed)
+# This is now done outside the if/else to avoid repetition.
+echo "[INFO] Installing/Verifying PyTorch packages..."
+conda install pytorch torchvision torchaudio pytorch-cuda=11.8 -c pytorch -c nvidia -y
+
+# Navigate to the directory from which the job was submitted
+cd "$PBS_O_WORKDIR" || { echo "[ERROR] Failed to change directory to \$PBS_O_WORKDIR."; exit 1; }
+
+echo "[INFO] Job started on host: $(hostname)"
+echo "[INFO] Current working directory: $(pwd)"
+echo "[INFO] Python executable: $(which python)"
+echo "[INFO] Conda environment: $CONDA_DEFAULT_ENV"
+
+# Run your Python script
+python pred_synthetic_heatmap.py
