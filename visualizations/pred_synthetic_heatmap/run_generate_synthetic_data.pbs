@@ -1,5 +1,5 @@
 #!/bin/bash
-#PBS -N create_synthetic_dataset_job
+#PBS -N generate_synthetic_dataset_job
 #PBS -A UCUL0008
 #PBS -l select=1:ncpus=4:mem=64GB
 #PBS -l walltime=24:00:00

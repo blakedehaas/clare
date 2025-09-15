@@ -15,7 +15,7 @@ import models.feed_forward as model_definition
 import constants
 
 # --- Configuration ---
-SYNTHETIC_DATA_PATH = "synthetic_data_for_heatmap.parquet"
+SYNTHETIC_DATA_PATH = "synthetic_output_dataset.parquet"
 CHECKPOINT_PATH = os.path.join("../../", "checkpoints", "checkpoint.pth")
 STATS_PATH = os.path.join("../../", "checkpoints", "norm_stats.json")
 PLOT_OUTPUT_FILENAME = "pred_sythetic_heatmap.png"
