@@ -191,12 +191,11 @@ def plot_observation_heatmaps(df, te_col, param_cols, param_labels, param_ranges
     max_counts_overall = 0
     hist_plot_data = [] 
 
-    # --- MODIFICATION: Define font sizes ---
-    font_size_label = 14
-    font_size_tick = 12
-    font_size_panel_label = 14
-    font_size_suptitle = 18
-    # --- END MODIFICATION ---
+    # --- Define font sizes ---
+    font_size_label = 28
+    font_size_tick = 18
+    font_size_panel_label = 28
+    font_size_suptitle = 28
 
     for i, (param_col, param_range) in enumerate(zip(param_cols, param_ranges)):
         current_data = {'param_col': param_col, 'param_range': param_range, 'x_data': None, 'y_data': None, 'valid': False}
@@ -275,10 +274,10 @@ def plot_observation_heatmaps(df, te_col, param_cols, param_labels, param_ranges
         if not plot_data['valid']:
             ax.text(0.5, 0.5, f"No valid data for\n'{param_col_name}'\nin range ({current_plot_param_min:.2f}, {current_plot_param_max:.2f})",
                     ha='center', va='center', transform=ax.transAxes, color='red', fontsize=9)
-            # --- MODIFICATION: Increased font size ---
+            # --- Increased font size ---
             ax.set_xlabel(param_label, fontsize=font_size_label)
             ax.set_xlim(current_plot_param_min, current_plot_param_max)
-            # --- MODIFICATION: Increased font size for tick labels ---
+            # --- Increased font size for tick labels ---
             ax.tick_params(axis='both', which='major', labelsize=font_size_tick)
             continue
 
@@ -295,18 +294,18 @@ def plot_observation_heatmaps(df, te_col, param_cols, param_labels, param_ranges
         )
         if np.any(h_counts > 0): im = im_current 
 
-        # --- MODIFICATION: Increased font size ---
+        # --- Increased font size ---
         ax.set_xlabel(param_label, fontsize=font_size_label)
         ax.set_xlim(current_plot_param_min, current_plot_param_max)
-        # --- MODIFICATION: Increased font size for tick labels ---
+        # --- Increased font size for tick labels ---
         ax.tick_params(axis='both', which='major', labelsize=font_size_tick)
 
 
     if im is not None:
         cbar_ax = fig.add_axes([0.92, 0.15, 0.015, 0.7]) 
         cbar = fig.colorbar(im, cax=cbar_ax)
-        # --- MODIFICATION: Increased font size for colorbar label and ticks ---
-        cbar.set_label('Obs # (Number of Observations)', fontsize=font_size_label)
+        # --- Increased font size for colorbar label and ticks ---
+        cbar.set_label('Observations', fontsize=font_size_label)
         cbar.ax.tick_params(labelsize=font_size_tick)
     else:
         print("Skipping colorbar as no valid plot generated a mappable image.")
@@ -314,8 +313,8 @@ def plot_observation_heatmaps(df, te_col, param_cols, param_labels, param_ranges
     plt.suptitle(f'Distribution of {TE_DISPLAY_NAME} Observations', fontsize=font_size_suptitle, y=0.98)
     fig.subplots_adjust(left=0.07, right=0.90, top=0.90, bottom=0.15, wspace=0.15) 
 
-    plt.savefig("electron_temperature_distributions.png", dpi=300, bbox_inches='tight')
-    print(f"Saved plot to electron_temperature_distributions.png")
+    plt.savefig("electron_temperature_distribution.png", dpi=300, bbox_inches='tight')
+    print(f"Saved plot to electron_temperature_distribution.png")
     plt.show()
 
 # --- PLOTTING FUNCTION ---
