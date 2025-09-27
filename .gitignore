@@ -1,9 +1,8 @@
 wandb/*
 *.pth
-*.png
 *.tsv
 *.pyc
 dataset/processed_dataset/*
-dataset/processed_dataset/*
+dataset/processed_dataset_01_31_storm/*
 data/*
 archive/*
