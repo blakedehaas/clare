@@ -1,30 +1,0 @@
-[INFO] Unsetting LD_LIBRARY_PATH to ensure a clean environment.
-[INFO] Activating Python venv environment: /glade/campaign/univ/ucul0008/auroral_precipitation_ml/clare/aurora_venv
-[INFO] Job started at: Tue Nov 18 07:40:34 PM MST 2025
-[INFO] Running on host: casper29
-[INFO] Current working directory: /glade/campaign/univ/ucul0008/auroral_precipitation_ml/clare/visualizations/pred_synthetic_heatmap
-[INFO] Python executable: /glade/campaign/univ/ucul0008/auroral_precipitation_ml/clare/aurora_venv/bin/python
-[INFO] Checking GPU availability with PyTorch...
-    CUDA available: True
-    GPU Name: Tesla V100-SXM2-32GB
-[INFO] Running the combined data generation and visualization script...
---- Starting Combined Data Generation and Visualization ---
-Using L-shell = 4.0, ILAT = ~60.00 degrees.
-Using device: cuda
---- Loading and Processing Solar Index Data ---
-Reading AL/SYM-H files:   0%|          | 0/12 [00:00<?, ?it/s]Reading AL/SYM-H files:   8%|▊         | 1/12 [00:00<00:01,  5.88it/s]Reading AL/SYM-H files:  17%|█▋        | 2/12 [00:00<00:01,  5.98it/s]Reading AL/SYM-H files:  25%|██▌       | 3/12 [00:00<00:01,  5.95it/s]Reading AL/SYM-H files:  33%|███▎      | 4/12 [00:00<00:01,  5.91it/s]Reading AL/SYM-H files:  42%|████▏     | 5/12 [00:00<00:01,  5.91it/s]Reading AL/SYM-H files:  50%|█████     | 6/12 [00:01<00:01,  5.91it/s]Reading AL/SYM-H files:  58%|█████▊    | 7/12 [00:01<00:00,  5.91it/s]Reading AL/SYM-H files:  67%|██████▋   | 8/12 [00:01<00:00,  5.92it/s]Reading AL/SYM-H files:  75%|███████▌  | 9/12 [00:01<00:00,  5.93it/s]Reading AL/SYM-H files:  83%|████████▎ | 10/12 [00:01<00:00,  5.96it/s]Reading AL/SYM-H files:  92%|█████████▏| 11/12 [00:01<00:00,  5.93it/s]Reading AL/SYM-H files: 100%|██████████| 12/12 [00:02<00:00,  5.92it/s]Reading AL/SYM-H files: 100%|██████████| 12/12 [00:02<00:00,  5.93it/s]
-Solar index data loaded successfully.
-
---- Generating data for 4 batches ---
-Generating Data:   0%|          | 0/4 [00:00<?, ?it/s]Generating Data:  25%|██▌       | 1/4 [00:37<01:53, 37.73s/it]Generating Data:  50%|█████     | 2/4 [01:14<01:14, 37.30s/it]Generating Data:  75%|███████▌  | 3/4 [01:51<00:37, 37.07s/it]Generating Data: 100%|██████████| 4/4 [02:19<00:00, 33.30s/it]Generating Data: 100%|██████████| 4/4 [02:19<00:00, 34.76s/it]
-
---- Data generation complete. Concatenating and visualizing... ---
-Final DataFrame created with shape: (1312272, 192)
---- Preparing data for visualization ---
---- Generating combined visualization plot ---
-Saving combined plot to: L4.0_GMLT_0.0_combined_synthetic_visualization.png
-
---- Pipeline complete. Visualization saved to 'L4.0_GMLT_0.0_combined_synthetic_visualization.png' ---
-[INFO] Script execution finished.
-[INFO] Deactivating venv.
-[INFO] Job finished at: Tue Nov 18 07:43:12 PM MST 2025
