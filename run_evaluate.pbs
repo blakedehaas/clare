@@ -1,0 +1,41 @@
+#!/bin/bash
+#PBS -N eval_1_48
+#PBS -A UCUL0008
+#PBS -l select=1:ncpus=8:ngpus=1:mem=32GB
+#PBS -l walltime=02:00:00
+#PBS -q casper
+#PBS -j oe
+#PBS -m abe
+#PBS -M blake.dehaas@lasp.colorado.edu
+
+# Move to your project directory
+cd /glade/campaign/univ/ucul0008/auroral_precipitation_ml/clare
+
+echo "Evaluation Job started at: $(date)"
+echo "Job running on host: $(hostname)"
+
+# Load necessary modules
+echo "Loading modules..."
+module purge
+module load ncarenv/24.12 
+module load conda
+module load cuda/12.8.0
+echo "Modules loaded."
+
+# Activate your environment
+echo "Activating clare_venv..."
+source clare_venv/bin/activate
+echo "Environment activated: $(which python)"
+
+# Display GPU hardware information
+echo "nvidia-smi output:"
+nvidia-smi
+echo ""
+
+# Run your evaluation script
+echo "Running Python script: evaluate.py..."
+python evaluate.py
+
+EXIT_CODE=$? 
+echo "Python script finished with exit code: $EXIT_CODE"
+echo "Evaluation finished at: $(date)"

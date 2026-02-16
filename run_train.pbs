@@ -1,0 +1,53 @@
+#!/bin/bash
+#PBS -N train_1_48
+#PBS -A UCUL0008
+#PBS -l select=1:ncpus=8:ngpus=1:mem=32GB
+#PBS -l walltime=24:00:00
+#PBS -q casper
+#PBS -j oe
+#PBS -m abe
+#PBS -M blake.dehaas@lasp.colorado.edu
+
+cd /glade/campaign/univ/ucul0008/auroral_precipitation_ml/clare
+
+echo "Job started at: $(date)"
+echo "Job running on host: $(hostname)"
+echo "Job ID: $PBS_JOBID"
+echo "Working directory: $(pwd)"
+echo ""
+
+# Load necessary modules
+echo "Loading modules..."
+module purge
+module load ncarenv/24.12 
+module load conda
+module load cuda/12.8.0
+echo "Modules loaded."
+echo ""
+
+# Activate your environment
+echo "Activating clare_venv"
+source clare_venv/bin/activate
+echo "Environment activated: $(which python)"
+echo ""
+
+export WANDB_MODE=online
+
+# Display GPU hardware information
+echo "GPU(s) allocated by PBS:"
+echo "CUDA_VISIBLE_DEVICES = $CUDA_VISIBLE_DEVICES"
+echo ""
+echo "nvidia-smi output:"
+nvidia-smi
+echo ""
+
+# Run your training script
+echo "Running Python script: train.py..."
+echo "Training started at: $(date)"
+python train.py
+
+EXIT_CODE=$? # Capture the exit code of the python script
+echo "Python script finished with exit code: $EXIT_CODE"
+echo ""
+
+echo "Training finished at: $(date)"
