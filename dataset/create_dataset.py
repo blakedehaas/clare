@@ -265,7 +265,7 @@ filtered_df['Kp_index'] = kp_df['Kp_index'].reindex(rounded_index).values
 print("Cleaning data and optimizing data types...")
 
 # List of invalid placeholder values
-invalid_values = [99, 99.9, 999.9, 9.999, 9999.0, 9999.99, 99999.99, 9999999, 9999999.0]
+invalid_values = [99.9, 999.9, 9.999, 9999.0, 9999.99, 99999.99, 9999999, 9999999.0]
 
 # Function to count and replace invalid values
 def replace_and_count_invalid_values(df, invalid_values, replacement=0):

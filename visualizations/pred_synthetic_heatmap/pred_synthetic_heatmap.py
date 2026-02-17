@@ -1,50 +1,97 @@
+# --- GENERAL IMPORTS ---
 import os
 import sys
+import glob
 import json
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
 import pandas as pd
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
 
-# Add top-level directory to path for custom imports (adjust if needed)
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+# --- VISUALIZATION IMPORTS ---
+import matplotlib
+matplotlib.use('Agg') 
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+
+# --- SPACEPY IMPORT ---
+try:
+    from spacepy import coordinates as coord
+    from spacepy.time import Ticktock
+except ImportError:
+    print("Error: The 'spacepy' library is required.", flush=True)
+    sys.exit(1)
+
+# --- MODEL IMPORTS & PATH CONFIGURATION ---
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, '../..'))
+sys.path.append(PROJECT_ROOT)
 import models.feed_forward as model_definition
 import constants
 
-# --- Configuration ---
-SYNTHETIC_DATA_PATH = "synthetic_output_dataset.parquet"
-CHECKPOINT_PATH = os.path.join("../../", "checkpoints", "checkpoint.pth")
-STATS_PATH = os.path.join("../../", "checkpoints", "norm_stats.json")
-PLOT_OUTPUT_FILENAME = "pred_sythetic_heatmap.png"
-BATCH_SIZE_PREDICT = 4096
+# ==============================================================================
+# --- 1. CONFIGURATION ---
+# ==============================================================================
 
-# Define input/output columns (must match training)
-input_columns = ['Altitude', 'GCLAT', 'GCLON', 'ILAT', 'GLAT', 'GMLT', 'XXLAT', 'XXLON', 'AL_index_0', 'AL_index_1', 'AL_index_2', 'AL_index_3', 'AL_index_4', 'AL_index_5', 'AL_index_6', 'AL_index_7', 'AL_index_8', 'AL_index_9', 'AL_index_10', 'AL_index_11', 'AL_index_12', 'AL_index_13', 'AL_index_14', 'AL_index_15', 'AL_index_16', 'AL_index_17', 'AL_index_18', 'AL_index_19', 'AL_index_20', 'AL_index_21', 'AL_index_22', 'AL_index_23', 'AL_index_24', 'AL_index_25', 'AL_index_26', 'AL_index_27', 'AL_index_28', 'AL_index_29', 'AL_index_30', 'SYM_H_0', 'SYM_H_1', 'SYM_H_2', 'SYM_H_3', 'SYM_H_4', 'SYM_H_5', 'SYM_H_6', 'SYM_H_7', 'SYM_H_8', 'SYM_H_9', 'SYM_H_10', 'SYM_H_11', 'SYM_H_12', 'SYM_H_13', 'SYM_H_14', 'SYM_H_15', 'SYM_H_16', 'SYM_H_17', 'SYM_H_18', 'SYM_H_19', 'SYM_H_20', 'SYM_H_21', 'SYM_H_22', 'SYM_H_23', 'SYM_H_24', 'SYM_H_25', 'SYM_H_26', 'SYM_H_27', 'SYM_H_28', 'SYM_H_29', 'SYM_H_30', 'SYM_H_31', 'SYM_H_32', 'SYM_H_33', 'SYM_H_34', 'SYM_H_35', 'SYM_H_36', 'SYM_H_37', 'SYM_H_38', 'SYM_H_39', 'SYM_H_40', 'SYM_H_41', 'SYM_H_42', 'SYM_H_43', 'SYM_H_44', 'SYM_H_45', 'SYM_H_46', 'SYM_H_47', 'SYM_H_48', 'SYM_H_49', 'SYM_H_50', 'SYM_H_51', 'SYM_H_52', 'SYM_H_53', 'SYM_H_54', 'SYM_H_55', 'SYM_H_56', 'SYM_H_57', 'SYM_H_58', 'SYM_H_59', 'SYM_H_60', 'SYM_H_61', 'SYM_H_62', 'SYM_H_63', 'SYM_H_64', 'SYM_H_65', 'SYM_H_66', 'SYM_H_67', 'SYM_H_68', 'SYM_H_69', 'SYM_H_70', 'SYM_H_71', 'SYM_H_72', 'SYM_H_73', 'SYM_H_74', 'SYM_H_75', 'SYM_H_76', 'SYM_H_77', 'SYM_H_78', 'SYM_H_79', 'SYM_H_80', 'SYM_H_81', 'SYM_H_82', 'SYM_H_83', 'SYM_H_84', 'SYM_H_85', 'SYM_H_86', 'SYM_H_87', 'SYM_H_88', 'SYM_H_89', 'SYM_H_90', 'SYM_H_91', 'SYM_H_92', 'SYM_H_93', 'SYM_H_94', 'SYM_H_95', 'SYM_H_96', 'SYM_H_97', 'SYM_H_98', 'SYM_H_99', 'SYM_H_100', 'SYM_H_101', 'SYM_H_102', 'SYM_H_103', 'SYM_H_104', 'SYM_H_105', 'SYM_H_106', 'SYM_H_107', 'SYM_H_108', 'SYM_H_109', 'SYM_H_110', 'SYM_H_111', 'SYM_H_112', 'SYM_H_113', 'SYM_H_114', 'SYM_H_115', 'SYM_H_116', 'SYM_H_117', 'SYM_H_118', 'SYM_H_119', 'SYM_H_120', 'SYM_H_121', 'SYM_H_122', 'SYM_H_123', 'SYM_H_124', 'SYM_H_125', 'SYM_H_126', 'SYM_H_127', 'SYM_H_128', 'SYM_H_129', 'SYM_H_130', 'SYM_H_131', 'SYM_H_132', 'SYM_H_133', 'SYM_H_134', 'SYM_H_135', 'SYM_H_136', 'SYM_H_137', 'SYM_H_138', 'SYM_H_139', 'SYM_H_140', 'SYM_H_141', 'SYM_H_142', 'SYM_H_143', 'SYM_H_144', 'f107_index_0', 'f107_index_1', 'f107_index_2', 'f107_index_3', 'Kp_index']
-model_output_column = 'Te1_pred'
+# --- Path Configuration ---
+BASE_DATA_DIR = os.path.join(PROJECT_ROOT, 'dataset', 'input_dataset')
+CHECKPOINTS_DIR = os.path.join(PROJECT_ROOT, 'checkpoints')
+KP_FILE_PATH = os.path.join(BASE_DATA_DIR, 'omni_kp_index.lst')
+OMNI_AL_SYMH_PATH = os.path.join(BASE_DATA_DIR, 'omni_al_index_symh', '*.lst')
+F107_FILE_PATH = os.path.join(BASE_DATA_DIR, 'omni_f107', '*.lst')
+CHECKPOINT_PATH = os.path.join(CHECKPOINTS_DIR, "checkpoint.pth")
+STATS_PATH = os.path.join(CHECKPOINTS_DIR, "norm_stats.json")
 
-# Model hyperparameters (must match trained model)
+# --- Data Generation Grid Config ---
+TIME_START = "1991-01-28 00:00:00"
+TIME_END = "1991-02-10 00:00:00"
+TIME_INCREMENT = "10min"
+ALTITUDE_START_KM = 1000
+ALTITUDE_END_KM = 8000
+ALTITUDE_INCREMENT_KM = 10
+
+TIMESTAMPS_PER_BATCH = 500
+BATCH_SIZE_PREDICT = 8192
+
+# --- FIXED GEOGRAPHIC ANCHOR (Millstone Hill) ---
+L_shell_val = 3.0
+FIXED_GCLAT = 43.0  # Millstone Hill Latitude
+FIXED_GCLON = 289.0 # Millstone Hill Longitude (East)
+ILAT_DEG = np.rad2deg(np.arccos(1.0 / np.sqrt(L_shell_val)))
+
+# --- Physics & Model Constants ---
+RE_KM = 6371.0
+TEMP_BIN_WIDTH_K = 100
+TEMP_BIN_CENTER_OFFSET_K = 50
+
+# --- Visualization Config ---
+COMBINED_PLOT_FILENAME = f"L{L_shell_val}_MillstoneHill_synthetic_visualization.png"
+PRED_TEMP_COLUMN = 'Te1_pred'
+CONFIDENCE_COLUMN = 'confidence'
+SOLAR_FEATURE_COLUMNS = ['Kp_index', 'SYM_H_0', 'f107_index_0', 'AL_index_0']
+KP_INDEX_SCALE_FACTOR = 10.0
+CONFIDENCE_VMAX_PERCENT = 50.0
+
+# --- Model Input Config ---
+input_columns = [
+    'Altitude', 'GCLAT', 'GCLON', 'ILAT', 'GLAT', 'GMLT', 'XXLAT', 'XXLON', 
+    'AL_index_0', 'AL_index_1', 'AL_index_2', 'AL_index_3', 'AL_index_4', 'AL_index_5', 'AL_index_6', 'AL_index_7', 'AL_index_8', 'AL_index_9', 'AL_index_10', 'AL_index_11', 'AL_index_12', 'AL_index_13', 'AL_index_14', 'AL_index_15', 'AL_index_16', 'AL_index_17', 'AL_index_18', 'AL_index_19', 'AL_index_20', 'AL_index_21', 'AL_index_22', 'AL_index_23', 'AL_index_24', 'AL_index_25', 'AL_index_26', 'AL_index_27', 'AL_index_28', 'AL_index_29', 'AL_index_30', 
+    'SYM_H_0', 'SYM_H_1', 'SYM_H_2', 'SYM_H_3', 'SYM_H_4', 'SYM_H_5', 'SYM_H_6', 'SYM_H_7', 'SYM_H_8', 'SYM_H_9', 'SYM_H_10', 'SYM_H_11', 'SYM_H_12', 'SYM_H_13', 'SYM_H_14', 'SYM_H_15', 'SYM_H_16', 'SYM_H_17', 'SYM_H_18', 'SYM_H_19', 'SYM_H_20', 'SYM_H_21', 'SYM_H_22', 'SYM_H_23', 'SYM_H_24', 'SYM_H_25', 'SYM_H_26', 'SYM_H_27', 'SYM_H_28', 'SYM_H_29', 'SYM_H_30', 'SYM_H_31', 'SYM_H_32', 'SYM_H_33', 'SYM_H_34', 'SYM_H_35', 'SYM_H_36', 'SYM_H_37', 'SYM_H_38', 'SYM_H_39', 'SYM_H_40', 'SYM_H_41', 'SYM_H_42', 'SYM_H_43', 'SYM_H_44', 'SYM_H_45', 'SYM_H_46', 'SYM_H_47', 'SYM_H_48', 'SYM_H_49', 'SYM_H_50', 'SYM_H_51', 'SYM_H_52', 'SYM_H_53', 'SYM_H_54', 'SYM_H_55', 'SYM_H_56', 'SYM_H_57', 'SYM_H_58', 'SYM_H_59', 'SYM_H_60', 'SYM_H_61', 'SYM_H_62', 'SYM_H_63', 'SYM_H_64', 'SYM_H_65', 'SYM_H_66', 'SYM_H_67', 'SYM_H_68', 'SYM_H_69', 'SYM_H_70', 'SYM_H_71', 'SYM_H_72', 'SYM_H_73', 'SYM_H_74', 'SYM_H_75', 'SYM_H_76', 'SYM_H_77', 'SYM_H_78', 'SYM_H_79', 'SYM_H_80', 'SYM_H_81', 'SYM_H_82', 'SYM_H_83', 'SYM_H_84', 'SYM_H_85', 'SYM_H_86', 'SYM_H_87', 'SYM_H_88', 'SYM_H_89', 'SYM_H_90', 'SYM_H_91', 'SYM_H_92', 'SYM_H_93', 'SYM_H_94', 'SYM_H_95', 'SYM_H_96', 'SYM_H_97', 'SYM_H_98', 'SYM_H_99', 'SYM_H_100', 'SYM_H_101', 'SYM_H_102', 'SYM_H_103', 'SYM_H_104', 'SYM_H_105', 'SYM_H_106', 'SYM_H_107', 'SYM_H_108', 'SYM_H_109', 'SYM_H_110', 'SYM_H_111', 'SYM_H_112', 'SYM_H_113', 'SYM_H_114', 'SYM_H_115', 'SYM_H_116', 'SYM_H_117', 'SYM_H_118', 'SYM_H_119', 'SYM_H_120', 'SYM_H_121', 'SYM_H_122', 'SYM_H_123', 'SYM_H_124', 'SYM_H_125', 'SYM_H_126', 'SYM_H_127', 'SYM_H_128', 'SYM_H_129', 'SYM_H_130', 'SYM_H_131', 'SYM_H_132', 'SYM_H_133', 'SYM_H_134', 'SYM_H_135', 'SYM_H_136', 'SYM_H_137', 'SYM_H_138', 'SYM_H_139', 'SYM_H_140', 'SYM_H_141', 'SYM_H_142', 'SYM_H_143', 'SYM_H_144', 
+    'f107_index_0', 'f107_index_1', 'f107_index_2', 'f107_index_3', 'Kp_index'
+]
 input_size = len(input_columns)
 hidden_size = 2048
-output_size = 150 # Number of classes for Te1 bins
+output_size = 150
 
-# --- Reused Functions from your Original Script ---
+# ==============================================================================
+# --- 2. HELPER FUNCTIONS ---
+# ==============================================================================
+
 def check_file_exists(filepath, description):
     if not os.path.exists(filepath):
-        print(f"Error: {description} not found at '{filepath}'")
+        print(f"Error: {description} not found at '{filepath}'", flush=True)
         sys.exit(1)
-    print(f"Found {description} at: {filepath}")
-
-def load_model(model_path, device):
-    print(f"Loading model checkpoint from: {model_path}")
-    check_file_exists(model_path, "Model checkpoint")
-    model = model_definition.FeedForwardNetwork(input_size, hidden_size, output_size)
-    model.load_state_dict(torch.load(model_path, map_location=device, weights_only=True))
-    model.to(device)
-    model.eval()
-    return model
 
 def load_normalization_stats(stats_path):
     check_file_exists(stats_path, "Normalization stats file")
@@ -52,114 +99,355 @@ def load_normalization_stats(stats_path):
         stats = json.load(f)
     return stats['mean'], stats['std']
 
+def load_solar_indices(omni_al_symh_path, f107_file_path, kp_file_path):
+    print("--- Loading and Processing Solar Index Data ---", flush=True)
+    check_file_exists(kp_file_path, "Kp index file")
+    
+    # --- AL and SYM-H ---
+    al_symh_files = glob.glob(omni_al_symh_path)
+    if not al_symh_files: sys.exit(f"Error: No AL/SYM-H files found")
+    df_list = []
+    for f in tqdm(al_symh_files, desc="Reading AL/SYM-H files"):
+        df_chunk = pd.read_csv(f, sep=r'\s+', names=['Year', 'Day', 'Hour', 'Minute', 'AL_index', 'SYM_H'], 
+                               usecols=[0,1,2,3,4,5], na_values=[9999, 99999, 999.9, 99999.99])
+        df_chunk.dropna(subset=['Year', 'Day', 'Hour', 'Minute'], inplace=True) # Drop rows with missing time
+        df_list.append(df_chunk)
+    
+    omni_df = pd.concat(df_list, ignore_index=True)
+    omni_df['DateTime'] = pd.to_datetime(omni_df['Year'].astype(int).astype(str) + 
+                                         omni_df['Day'].astype(int).astype(str).str.zfill(3), format='%Y%j') + \
+                          pd.to_timedelta(omni_df['Hour'], unit='h') + \
+                          pd.to_timedelta(omni_df['Minute'], unit='m')
+    omni_df = omni_df[['DateTime', 'AL_index', 'SYM_H']].drop_duplicates('DateTime').set_index('DateTime').sort_index()
+    
+    # --- F10.7 ---
+    f107_files = glob.glob(f107_file_path)
+    f107_list = []
+    for f in f107_files:
+        df_chunk = pd.read_csv(f, sep=r'\s+', names=['Year', 'Day', 'Hour', 'f107_index'], na_values=[999.9])
+        df_chunk.dropna(subset=['Year', 'Day', 'Hour'], inplace=True)
+        f107_list.append(df_chunk)
+    
+    f107_df = pd.concat(f107_list, ignore_index=True)
+    f107_df['DateTime'] = pd.to_datetime(f107_df['Year'].astype(int).astype(str) + 
+                                         f107_df['Day'].astype(int).astype(str).str.zfill(3), format='%Y%j') + \
+                          pd.to_timedelta(f107_df['Hour'], unit='h')
+    f107_df = f107_df[['DateTime', 'f107_index']].drop_duplicates('DateTime').set_index('DateTime').sort_index()
+    
+    # --- Kp Index ---
+    kp_df = pd.read_csv(kp_file_path, sep=r'\s+', names=['Year', 'DOY', 'Hour', 'Kp_index'], na_values=[99.9])
+    # IMPORTANT: Drop rows where time info is NaN before converting to int
+    kp_df.dropna(subset=['Year', 'DOY', 'Hour'], inplace=True)
+    
+    kp_df['DateTime'] = pd.to_datetime(kp_df['Year'].astype(int).astype(str) + 
+                                       kp_df['DOY'].astype(int).astype(str).str.zfill(3), format='%Y%j') + \
+                        pd.to_timedelta(kp_df['Hour'], unit='h')
+    kp_df = kp_df[['DateTime', 'Kp_index']].drop_duplicates('DateTime').set_index('DateTime').sort_index()
+    
+    print("Solar index data loaded successfully.", flush=True)
+    return omni_df, f107_df, kp_df
+
+def create_temporal_solar_features(target_times, omni_df, f107_df, kp_df):
+    all_features = {}
+    al_time_lags = pd.timedelta_range(start='0m', end='5h', freq='10min'); past_al_ts = target_times.values[:, None] - al_time_lags.values
+    flat_al = omni_df['AL_index'].reindex(past_al_ts.ravel()).values; lagged_al = flat_al.reshape(past_al_ts.shape)
+    for i in range(lagged_al.shape[1]): all_features[f'AL_index_{i}'] = lagged_al[:, i]
+    
+    sym_h_time_lags = pd.timedelta_range(start='0m', end='3d', freq='30min'); past_sym_h_ts = target_times.values[:, None] - sym_h_time_lags.values
+    flat_sym_h = omni_df['SYM_H'].reindex(past_sym_h_ts.ravel()).values; lagged_sym_h = flat_sym_h.reshape(past_sym_h_ts.shape)
+    for i in range(lagged_sym_h.shape[1]): all_features[f'SYM_H_{i}'] = lagged_sym_h[:, i]
+    
+    f107_time_lags = pd.timedelta_range(start='0h', end='72h', freq='24h'); past_f107_ts = target_times.values[:, None] - f107_time_lags.values
+    rounded_f107 = pd.DatetimeIndex(past_f107_ts.ravel()).round('h'); flat_f107 = f107_df['f107_index'].reindex(rounded_f107, method='nearest').values
+    lagged_f107 = flat_f107.reshape(past_f107_ts.shape)
+    for i in range(lagged_f107.shape[1]): all_features[f'f107_index_{i}'] = lagged_f107[:, i]
+    
+    all_features['Kp_index'] = kp_df['Kp_index'].reindex(target_times.round('h'), method='nearest').values
+    return pd.DataFrame(all_features, index=target_times)
+
+def calculate_millstone_anchored_coords(df: pd.DataFrame, L_shell: float) -> pd.DataFrame:
+    """
+    Millstone-anchored geometry with footprint-based MLT (SM-based) and dipole mapping.
+
+    Returns, for each row (time, altitude):
+      - GMLT : Magnetic local time (hours) computed at the Millstone footprint (Sun-referenced; 12=noon)
+      - XXLAT: Geodetic latitude of the spacecraft (GDZ), at the requested altitude
+      - XXLON: Geodetic longitude of the spacecraft (GDZ), at the requested altitude
+      - GLAT : Dipole geomagnetic latitude (MAG) of the spacecraft, at the requested altitude
+      - GCLAT/GCLON: Fixed geodetic coordinates of the Millstone footprint (echoed)
+
+    Notes
+    -----
+    * Footprint is constructed in GDZ with [alt_km, lat_deg, lon_deg] ordering (SpacePy convention).
+    * MLT is computed from SM longitude via:  MLT = (SM_lon / 15) + 12  (mod 24).
+      This yields a Sun-referenced local time sector and varies with UT.
+    * Spacecraft coordinates along the field line use dipole mapping:
+        r = L * cos^2(lambda)  ->  lambda = arccos( sqrt(r/L) )
+      with longitude held constant along the line (dipole approximation).
+    * XXLAT/XXLON are returned from GDZ (geodetic), matching Akebono’s schema.
+    """
+
+    # ---------------------------
+    # 0) Validate inputs
+    # ---------------------------
+    required_cols = {'DateTimeFormatted', 'Altitude'}
+    missing = required_cols - set(df.columns)
+    if missing:
+        raise ValueError(f"Input DataFrame missing required column(s): {sorted(missing)}")
+    if not np.issubdtype(df['DateTimeFormatted'].dtype, np.datetime64):
+        raise TypeError("df['DateTimeFormatted'] must be pandas datetime64[ns] dtype.")
+
+    # ---------------------------
+    # 1) Compute MLT at the fixed footprint (once per unique time)
+    # ---------------------------
+    # Choose the footprint altitude (km). Use 0.0 for ground, or 1000.0 if you want a 1000-km "ionospheric" footprint.
+    FOOTPRINT_ALT_KM = 1000.0
+
+    # Unique timestamps (preserve order). Convert to ISO strings for Ticktock.
+    t_unique = df['DateTimeFormatted'].drop_duplicates()
+    iso_unique = t_unique.dt.strftime('%Y-%m-%dT%H:%M:%S').tolist()
+    ticks_unique = Ticktock(iso_unique, 'ISO')
+
+    # Build the geodetic (GDZ) footprint for each unique timestamp: [alt_km, lat_deg, lon_deg].
+    # Using GDZ ensures latitude/longitude are geodetic (Akebono uses geodetic for GCLAT/GCLON).
+    foot_gdz_unique = coord.Coords(
+        [[FOOTPRINT_ALT_KM, FIXED_GCLAT, FIXED_GCLON]] * len(t_unique),
+        'GDZ', 'sph', ticks=ticks_unique
+    )
+
+    # Convert footprint to Solar Magnetic (SM) to obtain a Sun-referenced longitude.
+    foot_sm_unique = foot_gdz_unique.convert('SM', 'sph')
+
+    # Magnetic local time (hours): 12 at sunward; 15 degrees per hour; wrapped to [0, 24).
+    mlt_unique = (foot_sm_unique.long / 15.0 + 12.0) % 24.0
+
+    # Map the per-time footprint SM longitude and MLT back to every row in df.
+    # Use Series with datetime index to ensure 1:1 mapping with DateTimeFormatted.
+    mlt_map = pd.Series(mlt_unique, index=t_unique.values)
+    lon_sm_map = pd.Series(foot_sm_unique.long, index=t_unique.values)
+
+    # Broadcast to all rows (NumPy arrays, aligned with df.index).
+    mlt_all = df['DateTimeFormatted'].map(mlt_map).to_numpy()
+    lon_sm_deg_all = df['DateTimeFormatted'].map(lon_sm_map).to_numpy()
+    lon_sm_rad_all = np.deg2rad(lon_sm_deg_all)
+
+    # ---------------------------
+    # 2) Dipole mapping along the L-shell to the requested altitude
+    # ---------------------------
+    # Convert altitude (km) -> geocentric radius in Earth radii (Re).
+    r_re = (df['Altitude'].to_numpy() + RE_KM) / RE_KM
+
+    # Dipole field-line relation: r = L * cos^2(lambda)  ->  lambda = arccos( sqrt(r/L) )
+    # Clip argument for numerical safety when r/L is very close to 1.
+    arg = np.clip(r_re / L_shell, 0.0, 1.0)
+    lam_rad = np.arccos(np.sqrt(arg))  # magnetic latitude (radians)
+
+    # In a centered dipole, magnetic longitude is constant along a field line,
+    # so we re-use the footprint SM longitude for the spacecraft position.
+    x_sm = r_re * np.cos(lam_rad) * np.cos(lon_sm_rad_all)
+    y_sm = r_re * np.cos(lam_rad) * np.sin(lon_sm_rad_all)
+    z_sm = r_re * np.sin(lam_rad)
+
+    # ---------------------------
+    # 3) Convert spacecraft position to desired coordinate systems
+    # ---------------------------
+    # Build a time vector for all rows (one per row).
+    iso_all = df['DateTimeFormatted'].dt.strftime('%Y-%m-%dT%H:%M:%S').tolist()
+    ticks_all = Ticktock(iso_all, 'ISO')
+
+    # Spacecraft position in SM Cartesian -> convert to:
+    #   (a) GDZ 'sph' for geodetic lat/lon (XXLAT/XXLON)
+    #   (b) MAG 'sph' for dipole geomagnetic latitude (GLAT)
+    sc_sm = coord.Coords(np.column_stack([x_sm, y_sm, z_sm]), 'SM', 'car', ticks=ticks_all)
+
+    # Geodetic (GDZ) spherical returns [alt_km, lat_deg, lon_deg]
+    sc_gdz = sc_sm.convert('GDZ', 'sph')
+    # Dipole geomagnetic (MAG) spherical returns [r_Re, lat_deg, lon_deg] in centered dipole
+    sc_mag = sc_sm.convert('MAG', 'sph')
+
+    # ---------------------------
+    # 4) Assemble outputs (aligned to df.index)
+    # ---------------------------
+    output = pd.DataFrame({
+        # Footprint-based MLT (constant vs altitude at a given time; varies with UT)
+        'GMLT': mlt_all.astype(float),
+
+        # Spacecraft geodetic latitude/longitude at the requested altitude (matches Akebono XXLAT/XXLON definition)
+        'XXLAT': sc_gdz.lati.astype(float),
+        'XXLON': sc_gdz.long.astype(float),
+
+        # Spacecraft dipole geomagnetic latitude (MAG). If you later need AACGM/QD, swap libraries.
+        'GLAT': sc_mag.lati.astype(float),
+
+        # Fixed geodetic footprint coordinates (echoed)
+        'GCLAT': np.full(len(df), FIXED_GCLAT, dtype=float),
+        'GCLON': np.full(len(df), FIXED_GCLON, dtype=float),
+    }, index=df.index)
+
+    return output
+
+def handle_missing_data(df, required_cols, threshold):
+    nan_counts = df[required_cols].isnull().sum()
+    cols_with_nan = nan_counts[nan_counts > 0]
+    if cols_with_nan.empty: return df
+    for col, count in cols_with_nan.items():
+        if (count / len(df)) * 100 > threshold: sys.exit(f"Error: Too much missing data in {col}")
+    return df.dropna(subset=cols_with_nan.index).reset_index(drop=True)
+
 def preprocess_data(df, means, stds):
-    df_processed = df.copy()
+    df_p = df.copy()
     if hasattr(constants, 'NORMALIZATIONS'):
         for col, norm_func in constants.NORMALIZATIONS.items():
-            if col in df_processed.columns:
-                df_processed[col] = pd.to_numeric(df_processed[col], errors='coerce').apply(norm_func)
-    index_groups = {
-        'AL_index': [c for c in input_columns if c.startswith('AL_index')],
-        'SYM_H': [c for c in input_columns if c.startswith('SYM_H')],
-        'f107_index': [c for c in input_columns if c.startswith('f107_index')]
-    }
-    for group, cols in index_groups.items():
-        if group in means and group in stds and stds[group] != 0:
-            df_processed[cols] = (df_processed[cols] - means[group]) / stds[group]
-    df_processed[input_columns] = df_processed[input_columns].fillna(0)
-    return df_processed
+            if col in df_p.columns: df_p[col] = pd.to_numeric(df_p[col], errors='coerce').apply(norm_func)
+    groups = {'AL_index': [c for c in input_columns if 'AL_index' in c], 'SYM_H': [c for c in input_columns if 'SYM_H' in c], 'f107_index': [c for c in input_columns if 'f107_index' in c]}
+    for g, cols in groups.items():
+        if g in means and g in stds: df_p[cols] = (df_p[cols] - means[g]) / stds[g]
+    return df_p
 
-def predict_te1(model, df_processed, device):
-    input_tensor = torch.tensor(df_processed[input_columns].values.astype(np.float32))
-    dataset = TensorDataset(input_tensor)
-    data_loader = DataLoader(dataset, batch_size=BATCH_SIZE_PREDICT, shuffle=False)
-    predictions = []
+def get_predictions_and_confidence(model, df_p, device):
+    input_tensor = torch.tensor(df_p[input_columns].values.astype(np.float32))
+    loader = DataLoader(TensorDataset(input_tensor), batch_size=BATCH_SIZE_PREDICT, shuffle=False)
+    temps, confs = [], []
     with torch.no_grad():
-        for batch_tensor, in tqdm(data_loader, desc="Predicting Te1"):
-            logits = model(batch_tensor.to(device))
-            predicted_classes = torch.argmax(logits, dim=1)
-            predicted_temps = predicted_classes.cpu().numpy() * 100 + 50
-            predictions.extend(predicted_temps)
-    return predictions
+        for b_tensor, in loader:
+            logits = model(b_tensor.to(device))
+            p_class = torch.argmax(logits, dim=1)
+            temps.extend((p_class.cpu().numpy() * TEMP_BIN_WIDTH_K + TEMP_BIN_CENTER_OFFSET_K))
+            probs = torch.softmax(logits, dim=1)
+            conf_val, _ = torch.max(probs, dim=1)
+            confs.extend((conf_val * 100).cpu().numpy())
+    return np.array(temps), np.array(confs)
 
-# --- New Heatmap Plotting Function ---
-def plot_heatmap(df, output_filename):
-    """
-    Creates and saves a heatmap of predicted Te1 vs. Altitude and Time.
-    """
-    print("Generating heatmap visualization...")
+def process_single_timestamp_batch(timestamps, model, device, all_solar_indices, altitude_range, means, stds):
+    omni_df, f107_df, kp_df = all_solar_indices
+    solar_features = create_temporal_solar_features(timestamps, omni_df, f107_df, kp_df)
+    batch_df = pd.DataFrame({'DateTimeFormatted': solar_features.index.repeat(len(altitude_range)), 'Altitude': np.tile(altitude_range, len(solar_features))})
+    batch_df = pd.merge(batch_df, solar_features, left_on='DateTimeFormatted', right_index=True, how='left')
+
+    # Apply coordinate logic anchored to Millstone Hill
+    coords_df = calculate_millstone_anchored_coords(batch_df, L_shell_val)
+    batch_df = pd.concat([batch_df, coords_df], axis=1)
+    batch_df['ILAT'] = ILAT_DEG
     
-    # Pivot the data to create a 2D grid for the heatmap
-    # Index (Y-axis): Altitude, Columns (X-axis): Time, Values: Predicted Te1
-    heatmap_data = df.pivot(
-        index='Altitude', 
-        columns='DateTimeFormatted', 
-        values=model_output_column
-    )
+    batch_df = handle_missing_data(batch_df, input_columns, 5.0)
+    if batch_df.empty: return pd.DataFrame()
 
-    # Get the axes labels from the pivoted data
-    time_labels = heatmap_data.columns
-    altitude_labels = heatmap_data.index
+    df_p = preprocess_data(batch_df, means, stds)
+    p_temp, p_conf = get_predictions_and_confidence(model, df_p, device)
+    batch_df[PRED_TEMP_COLUMN], batch_df[CONFIDENCE_COLUMN] = p_temp, p_conf
+    return batch_df
+
+def plot_combined_visualization(df: pd.DataFrame, output_filename: str):
+    """Creates and saves a multi-panel plot including colorbars for the heatmaps."""
+    print("--- Preparing data and generating visualization ---", flush=True)
     
-    fig, ax = plt.subplots(figsize=(18, 8))
-
-    # Use pcolormesh for accurate grid plotting
-    # We use LogNorm for the color scale if Te1 values vary over orders of magnitude
-    im = ax.pcolormesh(
-        time_labels, 
-        altitude_labels, 
-        heatmap_data.values, 
-        shading='auto',
-        cmap='turbo' # A colormap similar to the example image (blue-green-yellow-red)
-    )
-
-    # Add a colorbar
-    cbar = fig.colorbar(im, ax=ax)
-    cbar.set_label('Predicted Electron Temperature [K]', fontsize=12)
-
-    # Set labels and title
-    ax.set_title('Predicted Electron Temperature Heatmap', fontsize=16)
-    ax.set_xlabel('Date in 1991', fontsize=14)
-    ax.set_ylabel('Altitude [km]', fontsize=14)
+    # 1. Prepare Data
+    available_features = [col for col in SOLAR_FEATURE_COLUMNS if col in df.columns]
+    temp_heatmap = df.pivot(index='Altitude', columns='DateTimeFormatted', values=PRED_TEMP_COLUMN)
+    conf_heatmap = df.pivot(index='Altitude', columns='DateTimeFormatted', values=CONFIDENCE_COLUMN)
+    line_plot_data = df[['DateTimeFormatted'] + available_features].drop_duplicates().set_index('DateTimeFormatted')
     
-    # Format the x-axis to show dates nicely
-    ax.xaxis.set_major_locator(mdates.DayLocator(interval=1))
-    ax.xaxis.set_major_formatter(mdates.DateFormatter('%b %d'))
-    plt.setp(ax.get_xticklabels(), rotation=45, ha="right")
-
-    # Set y-axis limits
-    ax.set_ylim(min(altitude_labels), max(altitude_labels))
-
-    plt.tight_layout()
+    # 2. Setup Figure
+    num_subplots = 2 + len(available_features)
+    height_ratios = [4, 4] + [1] * len(available_features)
+    fig, axes = plt.subplots(num_subplots, 1, figsize=(20, 6 + 2 * num_subplots), 
+                             sharex=True, gridspec_kw={'height_ratios': height_ratios})
     
-    # Save and show the plot
-    print(f"Saving heatmap to: {output_filename}")
-    plt.savefig(output_filename, dpi=300)
-    plt.show()
+    fig.suptitle(f'Model Predictions: Millstone Hill Anchor (L={L_shell_val})', fontsize=20)
+    
+    # 3. Plot Temperature Heatmap
+    ax_temp = axes[0]
+    im_temp = ax_temp.pcolormesh(temp_heatmap.columns, temp_heatmap.index, temp_heatmap.values, 
+                                 shading='auto', cmap='turbo', vmin=0)
+    ax_temp.set_ylabel('Altitude [km]', fontsize=14)
+    ax_temp.set_title('Predicted Electron Temperature', fontsize=16, pad=10)
+    
+    # 4. Plot Confidence Heatmap
+    ax_conf = axes[1]
+    im_conf = ax_conf.pcolormesh(conf_heatmap.columns, conf_heatmap.index, conf_heatmap.values, 
+                                 shading='auto', cmap='magma', vmin=0, vmax=CONFIDENCE_VMAX_PERCENT)
+    ax_conf.set_ylabel('Altitude [km]', fontsize=14)
+    ax_conf.set_title('Peak Model Prediction Confidence', fontsize=16, pad=10)
+    
+    # 5. Plot Solar Index Features
+    plot_params = {
+        'Kp_index': {'label': 'Kp Index', 'color': 'red'},
+        'SYM_H_0': {'label': 'SYM-H (nT)', 'color': 'blue'},
+        'f107_index_0': {'label': 'F10.7 Index', 'color': 'green'},
+        'AL_index_0': {'label': 'AL Index (nT)', 'color': 'purple'}
+    }
+    for i, feature in enumerate(available_features):
+        ax_line = axes[2 + i]
+        params = plot_params.get(feature, {'label': feature, 'color': 'black'})
+        # Scale Kp back to 0-9 range for display if it was scaled by 10
+        data = line_plot_data[feature] / KP_INDEX_SCALE_FACTOR if feature == 'Kp_index' else line_plot_data[feature]
+        ax_line.plot(line_plot_data.index, data, color=params['color'], linewidth=1.5)
+        ax_line.set_ylabel(params['label'], fontsize=12)
+        ax_line.grid(True, linestyle='--', alpha=0.6)
+        ax_line.set_xlim(line_plot_data.index.min(), line_plot_data.index.max())
+    
+    # 6. Format X-Axis
+    ax_bottom = axes[-1]
+    ax_bottom.xaxis.set_major_locator(mdates.DayLocator(interval=1))
+    ax_bottom.xaxis.set_major_formatter(mdates.DateFormatter('%b %d'))
+    ax_bottom.set_xlabel(f'Date in {temp_heatmap.columns.min().year}', fontsize=14)
+    plt.setp(ax_bottom.get_xticklabels(), rotation=45, ha="right")
+    
+    # 7. Add Colorbars
+    # Adjust main plot to make room on the right
+    fig.subplots_adjust(right=0.90, top=0.94)
+    
+    # Temperature Colorbar
+    pos_temp = ax_temp.get_position()
+    cax_temp = fig.add_axes([pos_temp.x1 + 0.01, pos_temp.y0, 0.015, pos_temp.height])
+    fig.colorbar(im_temp, cax=cax_temp).set_label('Temperature [K]', fontsize=12)
+    
+    # Confidence Colorbar
+    pos_conf = ax_conf.get_position()
+    cax_conf = fig.add_axes([pos_conf.x1 + 0.01, pos_conf.y0, 0.015, pos_conf.height])
+    cbar_conf = fig.colorbar(im_conf, cax=cax_conf)
+    cbar_conf.set_label('Confidence (%)', fontsize=12)
+    
+    # Customize confidence ticks to show the '+' on the max value (e.g., "50+")
+    ticks = cbar_conf.get_ticks()
+    tick_labels = [f'{int(t)}' for t in ticks]
+    if tick_labels:
+        tick_labels[-1] = f'{tick_labels[-1]}+'
+    cbar_conf.set_ticks(ticks)
+    cbar_conf.set_ticklabels(tick_labels)
+    
+    # Save the finalized plot
+    print(f"Saving plot to: {output_filename}", flush=True)
+    plt.savefig(output_filename, dpi=300, bbox_inches='tight')
+    plt.close(fig)
 
-# --- Main Execution Logic ---
-if __name__ == "__main__":
+# ==============================================================================
+# --- 3. MAIN EXECUTION ---
+# ==============================================================================
+def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device}")
-
-    # 1. Load Model and Stats
-    model = load_model(CHECKPOINT_PATH, device)
-    means, stds = load_normalization_stats(STATS_PATH)
-
-    # 2. Load the SYNTHETIC dataset
-    print(f"Loading synthetic dataset from: {SYNTHETIC_DATA_PATH}")
-    check_file_exists(SYNTHETIC_DATA_PATH, "Synthetic dataset")
-    df_synthetic = pd.read_parquet(SYNTHETIC_DATA_PATH)
-    df_synthetic['DateTimeFormatted'] = pd.to_datetime(df_synthetic['DateTimeFormatted'])
-
-    # 3. Preprocess the synthetic data
-    print("Preprocessing synthetic data...")
-    df_processed = preprocess_data(df_synthetic, means, stds)
+    check_file_exists(CHECKPOINT_PATH, "Model checkpoint"); check_file_exists(STATS_PATH, "Stats")
     
-    # 4. Generate predictions
-    print("Generating predictions for synthetic data...")
-    predictions = predict_te1(model, df_processed, device)
-    df_synthetic[model_output_column] = predictions
+    omni_df, f107_df, kp_df = load_solar_indices(OMNI_AL_SYMH_PATH, F107_FILE_PATH, KP_FILE_PATH)
+    
+    model = model_definition.FeedForwardNetwork(input_size, hidden_size, output_size)
+    model.load_state_dict(torch.load(CHECKPOINT_PATH, map_location=device, weights_only=True))
+    model.to(device).eval()
+    means, stds = load_normalization_stats(STATS_PATH)
+    
+    time_range = pd.date_range(start=TIME_START, end=TIME_END, freq=TIME_INCREMENT, inclusive='left')
+    altitude_range = np.arange(ALTITUDE_START_KM, ALTITUDE_END_KM + 1, ALTITUDE_INCREMENT_KM, dtype=np.float32)
+    timestamp_batches = [time_range[i:i + TIMESTAMPS_PER_BATCH] for i in range(0, len(time_range), TIMESTAMPS_PER_BATCH)]
+    
+    all_dfs = []
+    for batch in tqdm(timestamp_batches, desc="Batches"):
+        res = process_single_timestamp_batch(batch, model, device, (omni_df, f107_df, kp_df), altitude_range, means, stds)
+        if not res.empty: all_dfs.append(res)
+        
+    if not all_dfs: sys.exit("No data generated.")
+    final_df = pd.concat(all_dfs, ignore_index=True)
+    plot_combined_visualization(final_df, COMBINED_PLOT_FILENAME)
+    print(f"Done. Saved to {COMBINED_PLOT_FILENAME}")
 
-    # 5. Plot the heatmap
-    plot_heatmap(df_synthetic, PLOT_OUTPUT_FILENAME)
+if __name__ == "__main__":
+    main()
