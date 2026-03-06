@@ -60,10 +60,16 @@ Requires Python 3.9+.
 git lfs install
 git clone https://github.com/blakedehaas/clare
 cd clare
+pip install --upgrade pip setuptools wheel
 pip install -r requirements.txt
 ```
 
 Run `git lfs install` before cloning so the pretrained checkpoint (`checkpoints/checkpoint.pth`, ~340MB) is downloaded automatically. You can verify it worked by checking the file size — if it's only ~130 bytes, run `git lfs pull` to download the actual weights.
+
+**GPU support:** For CUDA GPU acceleration, install PyTorch with CUDA separately before the requirements:
+```bash
+pip install torch --index-url https://download.pytorch.org/whl/cu121
+```
 
 ### 2. Data Preparation
 
