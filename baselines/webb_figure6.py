@@ -10,7 +10,7 @@ import pandas as pd
 from matplotlib.ticker import LogLocator, FixedFormatter
 
 
-ds = datasets.load_from_disk("/home/michael/auroral-precipitation-ml/dataset/output_dataset/test-normal-baseline-ready")
+ds = datasets.load_from_disk(os.path.join(os.path.dirname(__file__), '..', 'dataset', 'output_dataset', 'test-normal-baseline-ready'))
 # Function to calculate B(h) using equation (13b)
 def B_h(h, h0, L, R0):
     log_term = np.log10(h / h0) # Note: Modification made changing natural log to log 10, as per Webb paper

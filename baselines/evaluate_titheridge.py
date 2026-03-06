@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 import scipy
 
-ds = datasets.load_from_disk('dataset/output_dataset/test-normal-baseline-ready')
+ds = datasets.load_from_disk(os.path.join(os.path.dirname(__file__), '..', 'dataset', 'output_dataset', 'test-normal-baseline-ready'))
 
 # Remove rows where z_titheridge_Te is nan
 print(f"Dataset size before filtering: {len(ds)}")

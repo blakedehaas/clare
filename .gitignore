@@ -2,7 +2,7 @@ wandb/*
 *.pth
 *.tsv
 *.pyc
-dataset/processed_dataset/*
+__pycache__/
 dataset/processed_dataset_01_31_storm/*
 data/*
 archive/*

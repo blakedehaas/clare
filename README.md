@@ -1,6 +1,6 @@
 # CLARE: Classification-based Regression for Electron Temperature Prediction
 
-We present CLARE, the first machine learning model tailored to predict electron temperatures in Earth’s plasmasphere, covering altitudes from 1,000 to 8,000 km, by integrating geospatial and temporal solar indices.
+We present CLARE, the first machine learning model tailored to predict electron temperatures in Earth's plasmasphere, covering altitudes from 1,000 to 8,000 km, by integrating geospatial and temporal solar indices.
 
 CLARE is an 84-million-parameter neural network that uses a classification-based architecture. This approach discretizes the continuous output space into bins to enhance prediction accuracy while naturally embedding uncertainty estimates.
 
@@ -10,139 +10,124 @@ CLARE is an 84-million-parameter neural network that uses a classification-based
 *   Utilizes in-situ geospatial data from the Akebono satellite and solar activity indices (Kp, AL, SYM-H, F10.7) as inputs.
 *   Employs a novel binned classification approach for improved accuracy and uncertainty quantification.
 *   Achieves predictions within 10% absolute deviation for 69.82% of observations under typical solar conditions.
-*   Demonstrates an accuracy of 21.39% on a  solar storm test set.
+*   Demonstrates an accuracy of 21.39% on a solar storm test set.
 
-**Paper:** For a detailed description of the model architecture, dataset, and results, please refer to our paper:
-[CLARE: Classification-based Regression for Electron Temperature Prediction (arXiv link)](https://docs.google.com/document/d/17t7eBduGdQoqOX6EXzHKLkKA3nxHLFlVrFWtiy-d-cA/edit?usp=sharing)
-
----
-
-## Table of Contents
-
-*   [Prerequisites](#prerequisites)
-*   [Installation](#installation)
-*   [Data Preparation](#data-preparation)
-*   [Training](#training)
-*   [Evaluation](#evaluation)
-*   [License](#license)
+**Paper:** [CLARE: Classification-based Regression for Electron Temperature Prediction (arXiv link)](https://arxiv.org/abs/XXXX.XXXXX)
 
 ---
 
-## Prerequisites
+## Project Structure
 
-Before you begin, set up the following:
-
-1.  **Python:** Required for using the repository, download version 3.9 or above.
-    *   [Download Python](https://www.python.org/downloads/)
-2.  **(Optional) Weights & Biases Account:** Optional for experiment tracking and model management.
-    *   [Sign up at Weights & Biases](https://wandb.ai/site)
-
----
-
-## Installation
-
-Follow these steps to set up the project environment:
-
-1.  **Clone the Repository:**
-    Open your terminal or command prompt and navigate to the directory where you want to store the project. Clone the repository using *either* SSH or HTTPS:
-
-    *   **Using SSH (Recommended):**
-        ```bash
-        git clone git@github.com:blakedehaas/clare.git
-        ```
-    Navigate into the cloned directory:
-    ```bash
-    cd clare
-    ```
-    Install Git Large File Storage:
-    ```bash
-    git lfs install
-    ```
-    Download the model checkpoint using Git Large File Storage:
-    ```bash
-    git lfs pull
-    ```
-
-3.  **Install Dependencies:**
-    Install all the required Python packages using pip and the `requirements.txt` file:
-    ```bash
-    pip install -r requirements.txt
-    ```
----
-
-## Data Preparation
-
-Prepare the necessary datasets for training and evaluation:
-
-1.  **Download Input Data:**
-    Download the following data files [from the data repository](https://drive.google.com/drive/folders/1WqUIcDYlR20UxPlgKlU30UZ3rHW6OfIi?usp=sharing)
-    *   `Akebono_combined.tsv`: AKEBONO dataset from EXOS-D satellite (this file is currently restricted, reach out to the paper authors for access)
-    *   `omni_kp_index.lst`: Kp index values from NASA OMNI dataset
-    *   `omni_al_index_symh.zip`: AL and SYM-H index values from NASA OMNI dataset
-    *   `omni_f107.zip`: f10.7 index values from NASA OMNI dataset
-
-2.  **Place Data Files:**
-    Move the downloaded files into the `clare/dataset/input_dataset/` directory.
-
-3.  **Unzip Archives:**
-    Navigate to the `clare/dataset/input_dataset/` directory and unzip the `.zip` files:
-    ```bash
-    cd dataset/input_dataset/
-    unzip omni_al_index_symh.zip
-    unzip omni_f107.zip
-    ```
-    After successful extraction, delete the original `.zip` files:
-    ```bash
-    rm omni_al_index_symh.zip omni_f107.zip
-    ```
-
-4.  **Run Dataset Creation Script:**
-    Navigate back to the `clare/dataset/` directory and run the script to process the raw data and create the final datasets:
-    ```bash
-    cd ..  # Move up from clare/dataset/input_dataset to clare/dataset
-    python create_dataset.py
-    ```
-    This script will generate the necessary processed data files used for training and evaluation, saving to the `clare/dataset/processed_dataset` directory.
+```
+clare/
+├── config.py                # Shared constants: columns, hyperparams, normalizations, paths
+├── inference.py             # Shared utilities: model loading, preprocessing, prediction
+├── train.py                 # Training script (argparse CLI)
+├── evaluate.py              # Evaluation script (argparse CLI)
+├── models/
+│   └── feed_forward.py      # FeedForwardNetwork model definition
+├── checkpoints/
+│   ├── checkpoint.pth       # Pretrained model weights (Git LFS)
+│   └── norm_stats.json      # Normalization statistics
+├── dataset/
+│   ├── create_dataset.py    # Script to build processed dataset from raw data
+│   ├── input_dataset/       # Raw input data files (download separately)
+│   └── processed_dataset_01_31_storm/  # Processed dataset (generated)
+│       ├── train_chunks/
+│       ├── test-normal/
+│       └── test-storm/
+├── visualizations/          # Visualization scripts for paper figures
+│   ├── pred_dotplot/
+│   ├── pred_vs_obs_dotplot/
+│   ├── pred_vs_obs_line/
+│   ├── pred_vs_obs_residual/
+│   ├── pred_vs_obs_correlation/
+│   ├── pred_synthetic_heatmap/
+│   └── dataset_visualization/
+├── baselines/               # Titheridge and Webb baseline implementations
+└── requirements.txt
+```
 
 ---
 
-## Training
+## Quick Start
 
-Train the CLARE model using the prepared datasets:
+### 1. Clone and Setup
 
-1.  **Configure Experiment Name:**
-    *   Open the `clare/train.py` file in your editor.
-    *   Manually update the `model_name` variable (line 24) to a unique identifier for your training run (e.g., `model_name = "clare_experiment1"`). This name will be used for saving checkpoints and normalization statistics.
+```bash
+git clone git@github.com:blakedehaas/clare.git
+cd clare
+git lfs install
+git lfs pull
+pip install -r requirements.txt
+```
 
-2.  **Run Training Script:**
-    *   Navigate to the top-level project directory (`clare/`).
-    *   Execute the training script:
-        ```bash
-        python train.py
-        ```
-    *   Training progress will be logged to your terminal and to Weights & Biases under the project `clare`.
-    *   The trained model checkpoint (`.pth` file) will be saved to `clare/checkpoints/` using the specified `model_name`.
-    *   Normalization statistics (e.g., mean, std) used during training will be saved to `clare/checkpoints/` using the specified `model_name`.
+The `git lfs pull` command downloads the pretrained model checkpoint (`checkpoints/checkpoint.pth`).
+
+### 2. Data Preparation
+
+Download the input data files [from the data repository](https://drive.google.com/drive/folders/1WqUIcDYlR20UxPlgKlU30UZ3rHW6OfIi?usp=sharing):
+
+*   `Akebono_combined.tsv` (restricted -- contact paper authors)
+*   `omni_kp_index.lst`
+*   `omni_al_index_symh.zip`
+*   `omni_f107.zip`
+
+Place files in `dataset/input_dataset/`, unzip the archives, then run:
+
+```bash
+cd dataset
+python create_dataset.py
+```
+
+This generates the processed dataset in `dataset/processed_dataset_01_31_storm/`.
+
+### 3. Training
+
+```bash
+python train.py --help
+python train.py --model-name my_run --epochs 10 --batch-size 512 --lr 8e-4
+```
+
+Checkpoints are saved to `checkpoints/`. Training progress is logged to Weights & Biases.
+
+### 4. Evaluation
+
+```bash
+python evaluate.py --help
+python evaluate.py --dataset test-normal
+python evaluate.py --dataset test-storm
+```
+
+### 5. Using the Pretrained Checkpoint
+
+The pretrained checkpoint is tracked via Git LFS. After `git lfs pull`:
+
+```bash
+python evaluate.py --dataset test-normal
+```
+
+### 6. Visualizations
+
+Each visualization script can be run from its directory:
+
+```bash
+cd visualizations/pred_vs_obs_line
+python pred_vs_obs_line.py
+```
+
+All visualization scripts import shared utilities from `config.py` and `inference.py` at the project root.
 
 ---
 
-## Evaluation
+## Data and Checkpoints
 
-Evaluate the performance of a trained model checkpoint:
-
-1.  **Configure Model Name for Evaluation:**
-    *   Open the `clare/evaluate.py` file in your editor.
-    *   Manually update the `model_name` variable (line 18) to match the exact `model_name` of the trained checkpoint you want to evaluate (the one you set in `train.py`).
-
-2.  **Select Test Dataset for Evaluation:**
-    *   Manually update the `dataset` variable (line 19) and select between `test-normal` and `test-storm`. The `test-normal` dataset consists of 50,000 randomly selected points over the entire dataset and the `test-storm` dataset consists of a continuous known solar storm period from May 16 - 20th, 1991.
-3.  **Run Evaluation Script:**
-    *   Ensure you are in the top-level project directory (`clare/`).
-    *   Execute the evaluation script:
-        ```bash
-        python evaluate.py
-        ```
-    *   The script will load the specified checkpoint and normalization statistics, run predictions on the test set, and print evaluation metrics. Results may also be logged to Weights & Biases if configured within the script.
+| File | Location | Description |
+|------|----------|-------------|
+| `checkpoint.pth` | `checkpoints/` | Pretrained model weights (Git LFS) |
+| `norm_stats.json` | `checkpoints/` | Group normalization statistics |
+| Input data | `dataset/input_dataset/` | Raw satellite and solar index data (download from Google Drive) |
+| Processed data | `dataset/processed_dataset_01_31_storm/` | Train/test splits (generated by `create_dataset.py`) |
 
 ---
 
