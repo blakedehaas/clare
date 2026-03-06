@@ -55,7 +55,7 @@ clare/
 ### 1. Clone and Setup
 
 ```bash
-git clone git@github.com:blakedehaas/clare.git
+git clone https://github.com/blakedehaas/clare
 cd clare
 git lfs install
 git lfs pull
