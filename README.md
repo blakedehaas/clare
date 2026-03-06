@@ -57,14 +57,13 @@ clare/
 Requires Python 3.9+.
 
 ```bash
+git lfs install
 git clone https://github.com/blakedehaas/clare
 cd clare
-git lfs install
-git lfs pull
 pip install -r requirements.txt
 ```
 
-The `git lfs pull` command downloads the pretrained model checkpoint (`checkpoints/checkpoint.pth`).
+Run `git lfs install` before cloning so the pretrained checkpoint (`checkpoints/checkpoint.pth`, ~340MB) is downloaded automatically. You can verify it worked by checking the file size — if it's only ~130 bytes, run `git lfs pull` to download the actual weights.
 
 ### 2. Data Preparation
 
