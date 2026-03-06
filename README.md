@@ -54,6 +54,8 @@ clare/
 
 ### 1. Clone and Setup
 
+Requires Python 3.9+.
+
 ```bash
 git clone https://github.com/blakedehaas/clare
 cd clare
