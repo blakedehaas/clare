@@ -54,7 +54,7 @@ clare/
 
 ### 1. Clone and Setup
 
-Requires Python 3.9+.
+Requires Python 3.13+.
 
 ```bash
 git lfs install
