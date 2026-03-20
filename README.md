@@ -13,7 +13,7 @@ CLARE is an 84-million-parameter neural network that uses a classification-based
 *   Demonstrates an accuracy of 21.39% on a  solar storm test set.
 
 **Paper:** For a detailed description of the model architecture, dataset, and results, please refer to our paper:
-[CLARE: Classification-based Regression for Electron Temperature Prediction (arXiv link)](https://docs.google.com/document/d/17t7eBduGdQoqOX6EXzHKLkKA3nxHLFlVrFWtiy-d-cA/edit?usp=sharing)
+[CLARE: Classification-based Regression for Electron Temperature Prediction](https://arxiv.org/abs/2603.12470)
 
 ---
 
@@ -63,7 +63,7 @@ Follow these steps to set up the project environment:
     git lfs pull
     ```
 
-3.  **Install Dependencies:**
+2.  **Install Dependencies:**
     Install all the required Python packages using pip and the `requirements.txt` file:
     ```bash
     pip install -r requirements.txt
