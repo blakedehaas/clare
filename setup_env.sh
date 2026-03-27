@@ -1,12 +1,13 @@
 #!/bin/bash
 
-# setup_env.sh: Creates the clare_venv environment
+# Create the clare_venv environment with the following command:
+# bash setup_env.sh
 echo "Setting up clare_venv..."
 
 # 1. NCAR-specific module loading
 module reset
 module load ncarenv/24.12
-module load gcc           # Required to compile SpacePy's C backend
+module load gcc           # Required to compile SpacePy's C backend and ApexPy's Fortran backend
 module load cuda/12.8.0   # For GPU support
 module load conda
 
@@ -20,7 +21,7 @@ source clare_venv/bin/activate
 echo "Installing dependencies..."
 pip install --upgrade pip
 
-# Install numpy first so SpacePy can build against its C-headers
+# Install numpy first so SpacePy and ApexPy can build against its C/Fortran headers
 pip install numpy==1.24.4
 
 # Install everything else from requirements.txt

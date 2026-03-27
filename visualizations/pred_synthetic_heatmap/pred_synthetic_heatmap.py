@@ -15,12 +15,11 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 
-# --- SPACEPY IMPORT ---
+# --- APEXPY IMPORT ---
 try:
-    from spacepy import coordinates as coord
-    from spacepy.time import Ticktock
+    from apexpy import Apex
 except ImportError:
-    print("Error: The 'spacepy' library is required.", flush=True)
+    print("Error: The 'apexpy' library is required. Install via 'pip install apexpy'", flush=True)
     sys.exit(1)
 
 # --- MODEL IMPORTS & PATH CONFIGURATION ---
@@ -55,10 +54,9 @@ TIMESTAMPS_PER_BATCH = 500
 BATCH_SIZE_PREDICT = 8192
 
 # --- FIXED GEOGRAPHIC ANCHOR (Millstone Hill) ---
-L_shell_val = 3.0
 FIXED_GCLAT = 43.0  # Millstone Hill Latitude
 FIXED_GCLON = 289.0 # Millstone Hill Longitude (East)
-ILAT_DEG = np.rad2deg(np.arccos(1.0 / np.sqrt(L_shell_val)))
+FOOTPRINT_ALT_KM = 300.0 # Altitude of the magnetic footprint matching Akebono orbits
 
 # --- Physics & Model Constants ---
 RE_KM = 6371.0
@@ -66,7 +64,7 @@ TEMP_BIN_WIDTH_K = 100
 TEMP_BIN_CENTER_OFFSET_K = 50
 
 # --- Visualization Config ---
-COMBINED_PLOT_FILENAME = f"L{L_shell_val}_MillstoneHill_synthetic_visualization.png"
+COMBINED_PLOT_FILENAME = "MillstoneHill_synthetic_visualization.png"
 PRED_TEMP_COLUMN = 'Te1_pred'
 CONFIDENCE_COLUMN = 'confidence'
 SOLAR_FEATURE_COLUMNS = ['Kp_index', 'SYM_H_0', 'f107_index_0', 'AL_index_0']
@@ -124,7 +122,7 @@ def load_solar_indices(omni_al_symh_path, f107_file_path, kp_file_path):
     f107_files = glob.glob(f107_file_path)
     f107_list = []
     for f in f107_files:
-        df_chunk = pd.read_csv(f, sep=r'\s+', names=['Year', 'Day', 'Hour', 'f107_index'], na_values=[999.9])
+        df_chunk = pd.read_csv(f, sep=r'\s+', names=['Year', 'Day', 'Hour', 'f107_index'], na_values=[99.9, 999.9])
         df_chunk.dropna(subset=['Year', 'Day', 'Hour'], inplace=True)
         f107_list.append(df_chunk)
     
@@ -136,7 +134,7 @@ def load_solar_indices(omni_al_symh_path, f107_file_path, kp_file_path):
     
     # --- Kp Index ---
     kp_df = pd.read_csv(kp_file_path, sep=r'\s+', names=['Year', 'DOY', 'Hour', 'Kp_index'], na_values=[99.9])
-    # IMPORTANT: Drop rows where time info is NaN before converting to int
+    # Drop rows where time info is NaN before converting to int
     kp_df.dropna(subset=['Year', 'DOY', 'Hour'], inplace=True)
     
     kp_df['DateTime'] = pd.to_datetime(kp_df['Year'].astype(int).astype(str) + 
@@ -165,126 +163,160 @@ def create_temporal_solar_features(target_times, omni_df, f107_df, kp_df):
     all_features['Kp_index'] = kp_df['Kp_index'].reindex(target_times.round('h'), method='nearest').values
     return pd.DataFrame(all_features, index=target_times)
 
-def calculate_millstone_anchored_coords(df: pd.DataFrame, L_shell: float) -> pd.DataFrame:
+def compute_apex_footprint_products(
+    df: pd.DataFrame,
+    xlat_fixed: float,
+    xlon_fixed: float,
+    footprint_alt_km: float = FOOTPRINT_ALT_KM, 
+    refh_km: float = 110.0,  # must be fixed
+    lon_convention: str = "east_0_360",   # "east_0_360" or "pm180"
+    include_qd_glat: bool = True,
+    verify_mapping: bool = True,
+    verify_tol_deg: float = 1e-3,
+) -> pd.DataFrame:
     """
-    Millstone-anchored geometry with footprint-based MLT (SM-based) and dipole mapping.
+    Apex mapping for MI-coupling / auroral precipitation workflows.
 
-    Returns, for each row (time, altitude):
-      - GMLT : Magnetic local time (hours) computed at the Millstone footprint (Sun-referenced; 12=noon)
-      - XXLAT: Geodetic latitude of the spacecraft (GDZ), at the requested altitude
-      - XXLON: Geodetic longitude of the spacecraft (GDZ), at the requested altitude
-      - GLAT : Dipole geomagnetic latitude (MAG) of the spacecraft, at the requested altitude
-      - GCLAT/GCLON: Fixed geodetic coordinates of the Millstone footprint (echoed)
+    Fixed inputs:
+      - xlat_fixed, xlon_fixed: geodetic spacecraft lat/lon (constant for all rows)
+      - df['Altitude']: spacecraft altitude [km]
+      - df['DateTimeFormatted']: timestamps (timezone-aware OK; interpreted as UTC)
 
-    Notes
-    -----
-    * Footprint is constructed in GDZ with [alt_km, lat_deg, lon_deg] ordering (SpacePy convention).
-    * MLT is computed from SM longitude via:  MLT = (SM_lon / 15) + 12  (mod 24).
-      This yields a Sun-referenced local time sector and varies with UT.
-    * Spacecraft coordinates along the field line use dipole mapping:
-        r = L * cos^2(lambda)  ->  lambda = arccos( sqrt(r/L) )
-      with longitude held constant along the line (dipole approximation).
-    * XXLAT/XXLON are returned from GDZ (geodetic), matching Akebono’s schema.
+    Outputs per row:
+      - XXLAT, XXLON: fixed geodetic inputs
+      - ILAT: invariant latitude = modified apex latitude (alat) at spacecraft point
+      - ALON: modified apex longitude (alon) at spacecraft point (field-line label)
+      - GMLT: magnetic local time [h] computed from ALON and UTC time (Apex definition)
+      - GCLAT, GCLON: geodetic footprint at `footprint_alt_km` on the same apex field line
+                      (computed by converting (ILAT, ALON) apex->geo at that altitude)
+      - GLAT (optional): QD latitude at spacecraft point (diagnostic "geomagnetic lat")
+      - VERIFY_OK (optional): whether apex->geo footprint maps back to same (ILAT, ALON)
+
+    Notes:
+      - This uses an APEX-consistent footprint (hold (alat, alon) constant), which is
+        appropriate when field-line mapping fidelity is critical.
+      - `refh_km` defines the coordinate system (typically 110 km). Do not confuse it
+        with `footprint_alt_km`.
     """
-
-    # ---------------------------
-    # 0) Validate inputs
-    # ---------------------------
-    required_cols = {'DateTimeFormatted', 'Altitude'}
-    missing = required_cols - set(df.columns)
+    # --------------------------
+    # Input validation
+    # --------------------------
+    required = {"DateTimeFormatted", "Altitude"}
+    missing = required - set(df.columns)
     if missing:
-        raise ValueError(f"Input DataFrame missing required column(s): {sorted(missing)}")
-    if not np.issubdtype(df['DateTimeFormatted'].dtype, np.datetime64):
-        raise TypeError("df['DateTimeFormatted'] must be pandas datetime64[ns] dtype.")
+        raise ValueError(f"df is missing required columns: {sorted(missing)}")
 
-    # ---------------------------
-    # 1) Compute MLT at the fixed footprint (once per unique time)
-    # ---------------------------
-    # Choose the footprint altitude (km). Use 0.0 for ground, or 1000.0 if you want a 1000-km "ionospheric" footprint.
-    FOOTPRINT_ALT_KM = 1000.0
+    if lon_convention not in ("east_0_360", "pm180"):
+        raise ValueError("lon_convention must be 'east_0_360' or 'pm180'")
 
-    # Unique timestamps (preserve order). Convert to ISO strings for Ticktock.
-    t_unique = df['DateTimeFormatted'].drop_duplicates()
-    iso_unique = t_unique.dt.strftime('%Y-%m-%dT%H:%M:%S').tolist()
-    ticks_unique = Ticktock(iso_unique, 'ISO')
+    # Work on a copy to avoid mutating caller's DataFrame
+    df_calc = df.copy()
 
-    # Build the geodetic (GDZ) footprint for each unique timestamp: [alt_km, lat_deg, lon_deg].
-    # Using GDZ ensures latitude/longitude are geodetic (Akebono uses geodetic for GCLAT/GCLON).
-    foot_gdz_unique = coord.Coords(
-        [[FOOTPRINT_ALT_KM, FIXED_GCLAT, FIXED_GCLON]] * len(t_unique),
-        'GDZ', 'sph', ticks=ticks_unique
-    )
+    # Ensure datetime column is datetime64 and timezone-naive UTC
+    df_calc["DateTimeFormatted"] = pd.to_datetime(df_calc["DateTimeFormatted"], utc=True, errors="raise")
+    # Remove tzinfo (ApexPy expects naive datetimes; still UTC by construction above)
+    df_calc["DateTimeFormatted"] = df_calc["DateTimeFormatted"].dt.tz_convert(None)
 
-    # Convert footprint to Solar Magnetic (SM) to obtain a Sun-referenced longitude.
-    foot_sm_unique = foot_gdz_unique.convert('SM', 'sph')
+    # Ensure Altitude is numeric
+    alt = pd.to_numeric(df_calc["Altitude"], errors="raise").to_numpy(dtype=float)
 
-    # Magnetic local time (hours): 12 at sunward; 15 degrees per hour; wrapped to [0, 24).
-    mlt_unique = (foot_sm_unique.long / 15.0 + 12.0) % 24.0
+    # Normalize fixed longitude to [0, 360) for internal consistency
+    xlat_fixed = float(xlat_fixed)
+    xlon_fixed = float(xlon_fixed)
+    xlon_fixed_360 = xlon_fixed % 360.0
 
-    # Map the per-time footprint SM longitude and MLT back to every row in df.
-    # Use Series with datetime index to ensure 1:1 mapping with DateTimeFormatted.
-    mlt_map = pd.Series(mlt_unique, index=t_unique.values)
-    lon_sm_map = pd.Series(foot_sm_unique.long, index=t_unique.values)
+    def _wrap360(x):
+        return np.mod(x, 360.0)
 
-    # Broadcast to all rows (NumPy arrays, aligned with df.index).
-    mlt_all = df['DateTimeFormatted'].map(mlt_map).to_numpy()
-    lon_sm_deg_all = df['DateTimeFormatted'].map(lon_sm_map).to_numpy()
-    lon_sm_rad_all = np.deg2rad(lon_sm_deg_all)
+    def _wrap180(x):
+        return (x + 180.0) % 360.0 - 180.0
 
-    # ---------------------------
-    # 2) Dipole mapping along the L-shell to the requested altitude
-    # ---------------------------
-    # Convert altitude (km) -> geocentric radius in Earth radii (Re).
-    r_re = (df['Altitude'].to_numpy() + RE_KM) / RE_KM
+    n = len(df_calc)
+    times_py = df_calc["DateTimeFormatted"].dt.to_pydatetime()
 
-    # Dipole field-line relation: r = L * cos^2(lambda)  ->  lambda = arccos( sqrt(r/L) )
-    # Clip argument for numerical safety when r/L is very close to 1.
-    arg = np.clip(r_re / L_shell, 0.0, 1.0)
-    lam_rad = np.arccos(np.sqrt(arg))  # magnetic latitude (radians)
+    # Preallocate outputs
+    ILAT = np.full(n, np.nan, dtype=float)
+    ALON = np.full(n, np.nan, dtype=float)
+    MLT  = np.full(n, np.nan, dtype=float)
+    GCLAT = np.full(n, np.nan, dtype=float)
+    GCLON = np.full(n, np.nan, dtype=float)
+    GLAT = np.full(n, np.nan, dtype=float) if include_qd_glat else None
+    VERIFY_OK = np.full(n, True, dtype=bool) if verify_mapping else None
 
-    # In a centered dipole, magnetic longitude is constant along a field line,
-    # so we re-use the footprint SM longitude for the spacecraft position.
-    x_sm = r_re * np.cos(lam_rad) * np.cos(lon_sm_rad_all)
-    y_sm = r_re * np.cos(lam_rad) * np.sin(lon_sm_rad_all)
-    z_sm = r_re * np.sin(lam_rad)
+    # --------------------------
+    # Main loop: group by day
+    # --------------------------
+    day_groups = df_calc.groupby(df_calc["DateTimeFormatted"].dt.floor("D")).groups
+    for day, idx in day_groups.items():
+        A = Apex(pd.Timestamp(day).to_pydatetime(), refh=refh_km)
 
-    # ---------------------------
-    # 3) Convert spacecraft position to desired coordinate systems
-    # ---------------------------
-    # Build a time vector for all rows (one per row).
-    iso_all = df['DateTimeFormatted'].dt.strftime('%Y-%m-%dT%H:%M:%S').tolist()
-    ticks_all = Ticktock(iso_all, 'ISO')
+        ii = np.array(list(idx), dtype=int)
+        k = len(ii)
 
-    # Spacecraft position in SM Cartesian -> convert to:
-    #   (a) GDZ 'sph' for geodetic lat/lon (XXLAT/XXLON)
-    #   (b) MAG 'sph' for dipole geomagnetic latitude (GLAT)
-    sc_sm = coord.Coords(np.column_stack([x_sm, y_sm, z_sm]), 'SM', 'car', ticks=ticks_all)
+        lat_i = np.full(k, xlat_fixed, dtype=float)
+        lon_i = np.full(k, xlon_fixed_360, dtype=float)
+        alt_i = alt[ii]
+        t_i = [times_py[j] for j in ii]
 
-    # Geodetic (GDZ) spherical returns [alt_km, lat_deg, lon_deg]
-    sc_gdz = sc_sm.convert('GDZ', 'sph')
-    # Dipole geomagnetic (MAG) spherical returns [r_Re, lat_deg, lon_deg] in centered dipole
-    sc_mag = sc_sm.convert('MAG', 'sph')
+        # 1) Spacecraft apex coords (field-line labels)
+        alat_i, alon_i = A.geo2apex(lat_i, lon_i, alt_i)
+        alat_i = np.asarray(alat_i, dtype=float)
+        alon_i = _wrap360(np.asarray(alon_i, dtype=float))
 
-    # ---------------------------
-    # 4) Assemble outputs (aligned to df.index)
-    # ---------------------------
-    output = pd.DataFrame({
-        # Footprint-based MLT (constant vs altitude at a given time; varies with UT)
-        'GMLT': mlt_all.astype(float),
+        ILAT[ii] = alat_i
+        ALON[ii] = alon_i
 
-        # Spacecraft geodetic latitude/longitude at the requested altitude (matches Akebono XXLAT/XXLON definition)
-        'XXLAT': sc_gdz.lati.astype(float),
-        'XXLON': sc_gdz.long.astype(float),
+        # 2) MLT from apex longitude + time
+        # ApexPy's mlon2mlt expects "magnetic longitude" + datetime
+        mlt_i = np.array([A.mlon2mlt(a, tt) for a, tt in zip(alon_i, t_i)], dtype=float)
+        MLT[ii] = np.mod(mlt_i, 24.0)
 
-        # Spacecraft dipole geomagnetic latitude (MAG). If you later need AACGM/QD, swap libraries.
-        'GLAT': sc_mag.lati.astype(float),
+        # 3) Footprint at chosen altitude: (alat, alon) in apex -> GEO at height
+        fp_lat, fp_lon = A.convert(alat_i, alon_i, "apex", "geo", height=footprint_alt_km)
+        fp_lat = np.asarray(fp_lat, dtype=float)
+        fp_lon = _wrap360(np.asarray(fp_lon, dtype=float))
 
-        # Fixed geodetic footprint coordinates (echoed)
-        'GCLAT': np.full(len(df), FIXED_GCLAT, dtype=float),
-        'GCLON': np.full(len(df), FIXED_GCLON, dtype=float),
-    }, index=df.index)
+        GCLAT[ii] = fp_lat
+        GCLON[ii] = fp_lon
 
-    return output
+        # 4) Optional: diagnostic QD latitude at spacecraft
+        if include_qd_glat:
+            qdlat_i, _ = A.geo2qd(lat_i, lon_i, alt_i)
+            GLAT[ii] = np.asarray(qdlat_i, dtype=float)
+
+        # 5) Optional: verify mapping consistency (footprint maps back to same ILAT/ALON)
+        if verify_mapping:
+            alat_chk, alon_chk = A.geo2apex(fp_lat, fp_lon, np.full(k, footprint_alt_km, dtype=float))
+            alat_chk = np.asarray(alat_chk, dtype=float)
+            alon_chk = _wrap360(np.asarray(alon_chk, dtype=float))
+
+            d_ilat = np.abs(alat_chk - alat_i)
+            d_alon = np.abs(_wrap180(alon_chk - alon_i))
+
+            VERIFY_OK[ii] = (d_ilat <= verify_tol_deg) & (d_alon <= verify_tol_deg)
+
+    # --------------------------
+    # Assemble output DataFrame
+    # --------------------------
+    out = pd.DataFrame(index=df.index)
+    out["XXLAT"] = xlat_fixed
+    out["XXLON"] = xlon_fixed if lon_convention == "pm180" else xlon_fixed_360
+
+    out["ILAT"] = ILAT
+    out["ALON"] = ALON
+    
+    # Note: MLT returned here is mapped to "GMLT" to align with neural network input features
+    out["GMLT"] = MLT
+    out["GCLAT"] = GCLAT
+    out["GCLON"] = _wrap180(GCLON) if lon_convention == "pm180" else GCLON
+    out["FOOTPRINT_ALT_KM"] = float(footprint_alt_km)
+
+    if include_qd_glat:
+        out["GLAT"] = GLAT
+    if verify_mapping:
+        out["VERIFY_OK"] = VERIFY_OK
+
+    return out
 
 def handle_missing_data(df, required_cols, threshold):
     nan_counts = df[required_cols].isnull().sum()
@@ -324,10 +356,16 @@ def process_single_timestamp_batch(timestamps, model, device, all_solar_indices,
     batch_df = pd.DataFrame({'DateTimeFormatted': solar_features.index.repeat(len(altitude_range)), 'Altitude': np.tile(altitude_range, len(solar_features))})
     batch_df = pd.merge(batch_df, solar_features, left_on='DateTimeFormatted', right_index=True, how='left')
 
-    # Apply coordinate logic anchored to Millstone Hill
-    coords_df = calculate_millstone_anchored_coords(batch_df, L_shell_val)
+    # Apply ApexPy mappings for Millstone Hill coordinates natively constructing ILAT, GLAT, GMLT, etc.
+    coords_df = compute_apex_footprint_products(
+        df=batch_df, 
+        xlat_fixed=FIXED_GCLAT, 
+        xlon_fixed=FIXED_GCLON, 
+        footprint_alt_km=FOOTPRINT_ALT_KM
+    )
+    
+    # Horizontally merge the coordinate outputs natively matched to the identical index order
     batch_df = pd.concat([batch_df, coords_df], axis=1)
-    batch_df['ILAT'] = ILAT_DEG
     
     batch_df = handle_missing_data(batch_df, input_columns, 5.0)
     if batch_df.empty: return pd.DataFrame()
@@ -353,7 +391,7 @@ def plot_combined_visualization(df: pd.DataFrame, output_filename: str):
     fig, axes = plt.subplots(num_subplots, 1, figsize=(20, 6 + 2 * num_subplots), 
                              sharex=True, gridspec_kw={'height_ratios': height_ratios})
     
-    fig.suptitle(f'Model Predictions: Millstone Hill Anchor (L={L_shell_val})', fontsize=20)
+    fig.suptitle('Model Predictions: Millstone Hill Anchor', fontsize=20)
     
     # 3. Plot Temperature Heatmap
     ax_temp = axes[0]
