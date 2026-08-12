@@ -1,5 +1,5 @@
 #!/bin/bash
-#PBS -N train_1_48
+#PBS -N train_clare_continuous
 #PBS -A UCUL0008
 #PBS -l select=1:ncpus=8:ngpus=1:mem=32GB
 #PBS -l walltime=24:00:00
@@ -8,46 +8,59 @@
 #PBS -m abe
 #PBS -M blake.dehaas@lasp.colorado.edu
 
-cd /glade/campaign/univ/ucul0008/auroral_precipitation_ml/clare
+# Navigate to the directory from which the job was submitted
+cd "$PBS_O_WORKDIR" || { echo "[ERROR] Failed to change directory to \$PBS_O_WORKDIR."; exit 1; }
 
-echo "Job started at: $(date)"
-echo "Job running on host: $(hostname)"
-echo "Job ID: $PBS_JOBID"
-echo "Working directory: $(pwd)"
+echo "[INFO] Job started at: $(date)"
+echo "[INFO] Job running on host: $(hostname)"
+echo "[INFO] Job ID: $PBS_JOBID"
+echo "[INFO] Current working directory: $(pwd)"
 echo ""
 
-# Load necessary modules
-echo "Loading modules..."
-module purge
-module load ncarenv/24.12 
-module load conda
+# Load NCAR's modules (matching setup_env.sh)
+module --force purge
+module load ncarenv/24.12
+module load gcc
 module load cuda/12.8.0
-echo "Modules loaded."
-echo ""
+module load conda
 
-# Activate your environment
-echo "Activating clare_venv"
+# Activate your venv environment
 source clare_venv/bin/activate
-echo "Environment activated: $(which python)"
+
+echo "[INFO] Environment activated: $(which python)"
 echo ""
 
 export WANDB_MODE=online
 
 # Display GPU hardware information
-echo "GPU(s) allocated by PBS:"
+echo "[INFO] GPU(s) allocated by PBS:"
 echo "CUDA_VISIBLE_DEVICES = $CUDA_VISIBLE_DEVICES"
 echo ""
 echo "nvidia-smi output:"
 nvidia-smi
 echo ""
 
-# Run your training script
-echo "Running Python script: train.py..."
-echo "Training started at: $(date)"
-python train.py
+# Hard-coded array of seeds for the block-split methodology
+SEEDS=(0 1 2)
 
-EXIT_CODE=$? # Capture the exit code of the python script
-echo "Python script finished with exit code: $EXIT_CODE"
-echo ""
+echo "[INFO] Starting continuous model training for seeds: ${SEEDS[*]}"
 
-echo "Training finished at: $(date)"
+# Run the Python script for each seed sequentially
+for SEED in "${SEEDS[@]}"; do
+    echo "============================================================"
+    echo "[INFO] Launching training for Seed $SEED (Continuous Variant)"
+    echo "============================================================"
+    
+    python train.py --seed "$SEED" --continuous
+    
+    EXIT_CODE=$?
+    if [ $EXIT_CODE -ne 0 ]; then
+        echo "[ERROR] Python script failed for Seed $SEED with exit code: $EXIT_CODE"
+        # Optional: exit 1 here if you want the whole job to stop on a single failure
+    else
+        echo "[SUCCESS] Training finished for Seed $SEED"
+    fi
+    echo ""
+done
+
+echo "[INFO] All continuous training loops finished at: $(date)"
