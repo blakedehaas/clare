@@ -1,4 +1,42 @@
+#!/usr/bin/env python3
+
+"""
+Dataset validation for configurable block-split experiments.
+
+This validator:
+
+1. Discovers all datasets matching:
+       processed_dataset_blocksplit_<block_hours>h_s<seed>
+
+2. Groups datasets by block size.
+
+3. Performs:
+       - Per-dataset validation
+       - Cross-seed validation
+       - Statistical validation
+       - Block integrity validation
+       - Storm integrity validation
+
+4. Writes:
+       dataset_validation/
+           <block_size>h/
+               summary.txt
+               seed_<seed>/
+                   validation_report.txt
+                   timeline.png
+                   year_coverage.png
+                   cdf_<variable>.png
+
+Every validation produces:
+    PASS
+    FAIL
+    INFO
+
+A final failure summary is included at the end of every report.
+"""
+
 import os
+import re
 import hashlib
 from itertools import combinations
 
@@ -6,24 +44,145 @@ import datasets
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+
 from scipy.stats import ks_2samp
 
 
-BASE_DIR = "."
-DATASET_PREFIX = "processed_dataset_blocksplit_s"
-SEEDS = [0, 1, 2]
+# ======================================================================================
+# Configuration
+# ======================================================================================
 
-VALIDATION_DIR = "dataset_validation"
-OLD_STORM_DATASET = "processed_dataset_01_31_storm/test-storm"
+DATASET_PATTERN = re.compile(
+    r"processed_dataset_blocksplit_(\d+)h_s(\d+)$"
+)
 
-os.makedirs(VALIDATION_DIR, exist_ok=True)
+VALIDATION_ROOT = "dataset_validation"
 
+STORM_START = pd.Timestamp("1991-01-31")
+STORM_END = pd.Timestamp("1991-02-07")
+
+KEY_FEATURES = [
+    "Te1",
+    "Kp_index",
+    "f107_index_0",
+    "GMLT",
+]
+
+EXPECTED_TRAIN_FRAC = 0.8
+EXPECTED_VAL_FRAC = 0.1
+EXPECTED_TEST_FRAC = 0.1
+
+
+os.makedirs(VALIDATION_ROOT, exist_ok=True)
+
+
+# ======================================================================================
+# Logging Helpers
+# ======================================================================================
 
 def log(msg):
     print(msg, flush=True)
 
 
+# ======================================================================================
+# Validation Result Collector
+# ======================================================================================
+
+class ValidationReport:
+
+    def __init__(self):
+        self.lines = []
+        self.failures = []
+
+    def info(self, name, value):
+        self.lines.append(f"[INFO] {name}: {value}")
+
+    def pass_check(self, name, value="PASS"):
+        self.lines.append(f"[PASS] {name}: {value}")
+
+    def fail_check(self, name, value):
+        self.lines.append(f"[FAIL] {name}: {value}")
+        self.failures.append(f"{name}: {value}")
+
+    def section(self, title):
+        self.lines.append("")
+        self.lines.append("=" * 100)
+        self.lines.append(title)
+        self.lines.append("=" * 100)
+
+    def finalize(self):
+
+        self.lines.append("")
+        self.lines.append("=" * 100)
+        self.lines.append("FAILED VALIDATIONS")
+        self.lines.append("=" * 100)
+
+        if not self.failures:
+            self.lines.append("NONE")
+        else:
+            self.lines.extend(self.failures)
+
+        return "\n".join(self.lines)
+
+
+# ======================================================================================
+# Dataset Discovery
+# ======================================================================================
+
+def discover_datasets():
+
+    groups = {}
+
+    for entry in os.listdir("."):
+
+        if not os.path.isdir(entry):
+            continue
+
+        match = DATASET_PATTERN.match(entry)
+
+        if not match:
+            continue
+
+        block_hours = int(match.group(1))
+        seed = int(match.group(2))
+
+        groups.setdefault(block_hours, []).append(
+            {
+                "seed": seed,
+                "path": entry,
+            }
+        )
+
+    for block_hours in groups:
+        groups[block_hours] = sorted(
+            groups[block_hours],
+            key=lambda x: x["seed"]
+        )
+
+    return groups
+
+
+# ======================================================================================
+# Utility Functions
+# ======================================================================================
+
+def dataset_checksum(ds):
+
+    md5 = hashlib.md5()
+
+    df = pd.DataFrame(ds[:])
+
+    payload = df.to_csv(
+        index=False
+    ).encode()
+
+    md5.update(payload)
+
+    return md5.hexdigest()
+
+
 def ecdf(values):
+
     values = np.asarray(values)
     values = values[~np.isnan(values)]
 
@@ -33,38 +192,39 @@ def ecdf(values):
     return x, y
 
 
-def checksum_column(ds, column):
-    arr = np.asarray(ds[column])
-    return hashlib.md5(arr.tobytes()).hexdigest()
+def write_text(path, text):
 
+    with open(path, "w") as f:
+        f.write(text)
+
+
+# ======================================================================================
+# Loading
+# ======================================================================================
 
 def load_train_dataset(dataset_dir):
+
     train_dir = os.path.join(dataset_dir, "train_chunks")
 
     chunk_dirs = sorted(
         [
-            os.path.join(train_dir, d)
-            for d in os.listdir(train_dir)
-            if d.startswith("train_chunk_")
+            os.path.join(train_dir, x)
+            for x in os.listdir(train_dir)
+            if x.startswith("train_chunk_")
         ]
     )
-
-    log(f"[INFO] Loading {len(chunk_dirs)} train chunks")
 
     ds_list = []
 
     for chunk_dir in chunk_dirs:
-        log(f"[INFO] Loading {os.path.basename(chunk_dir)}")
-        ds_list.append(datasets.Dataset.load_from_disk(chunk_dir))
-
-    log("[INFO] Concatenating train chunks")
+        ds_list.append(
+            datasets.Dataset.load_from_disk(chunk_dir)
+        )
 
     return datasets.concatenate_datasets(ds_list)
 
 
-def load_seed(seed):
-
-    dataset_dir = f"{DATASET_PREFIX}{seed}"
+def load_dataset_group(dataset_dir):
 
     train_ds = load_train_dataset(dataset_dir)
 
@@ -83,226 +243,61 @@ def load_seed(seed):
     return train_ds, val_ds, test_ds, storm_ds
 
 
-def build_cache(seed, train_ds, val_ds, test_ds):
+# ======================================================================================
+# Plotting
+# ======================================================================================
 
-    seed_dir = os.path.join(
-        VALIDATION_DIR,
-        f"seed_{seed}"
-    )
+def create_cdf_plots(output_dir, cache):
 
-    os.makedirs(seed_dir, exist_ok=True)
+    for variable in KEY_FEATURES:
 
-    cache_file = os.path.join(
-        seed_dir,
-        "cached_stats.npz"
-    )
+        key = f"{variable}_train"
 
-    if os.path.exists(cache_file):
-
-        log(f"[INFO] Loading cache for seed {seed}")
-
-        data = np.load(
-            cache_file,
-            allow_pickle=True
-        )
-
-        return {k: data[k] for k in data.files}
-
-    log(f"[INFO] Building cache for seed {seed}")
-
-    cache = {}
-
-    cache["train_times"] = pd.to_datetime(
-        train_ds["DateTimeFormatted"]
-    ).values.astype("datetime64[m]")
-
-    cache["val_times"] = pd.to_datetime(
-        val_ds["DateTimeFormatted"]
-    ).values.astype("datetime64[m]")
-
-    cache["test_times"] = pd.to_datetime(
-        test_ds["DateTimeFormatted"]
-    ).values.astype("datetime64[m]")
-
-    cache["train_year"] = pd.to_datetime(
-        train_ds["DateTimeFormatted"]
-    ).year.values
-
-    cache["val_year"] = pd.to_datetime(
-        val_ds["DateTimeFormatted"]
-    ).year.values
-
-    cache["test_year"] = pd.to_datetime(
-        test_ds["DateTimeFormatted"]
-    ).year.values
-
-    variables = [
-        "Te1",
-        "GMLT",
-        "Kp_index",
-        "f107_index_0",
-    ]
-
-    for var in variables:
-
-        if var in train_ds.column_names:
-
-            cache[f"{var}_train"] = np.asarray(train_ds[var])
-            cache[f"{var}_val"] = np.asarray(val_ds[var])
-            cache[f"{var}_test"] = np.asarray(test_ds[var])
-
-    np.savez_compressed(cache_file, **cache)
-
-    return cache
-
-
-def min_gap_minutes(reference_times, query_times):
-
-    reference_times = np.sort(reference_times)
-
-    idx = np.searchsorted(
-        reference_times,
-        query_times
-    )
-
-    gaps = np.full(
-        len(query_times),
-        np.inf
-    )
-
-    left = idx > 0
-    right = idx < len(reference_times)
-
-    if np.any(left):
-        gap_left = np.abs(
-            query_times[left]
-            - reference_times[idx[left] - 1]
-        ).astype(int)
-
-        gaps[left] = np.minimum(
-            gaps[left],
-            gap_left
-        )
-
-    if np.any(right):
-        gap_right = np.abs(
-            reference_times[idx[right]]
-            - query_times[right]
-        ).astype(int)
-
-        gaps[right] = np.minimum(
-            gaps[right],
-            gap_right
-        )
-
-    return gaps
-
-
-def write_report(seed, text):
-
-    outdir = os.path.join(
-        VALIDATION_DIR,
-        f"seed_{seed}"
-    )
-
-    os.makedirs(outdir, exist_ok=True)
-
-    with open(
-        os.path.join(
-            outdir,
-            f"seed_{seed}_report.txt"
-        ),
-        "w"
-    ) as f:
-
-        f.write(text)
-
-
-def create_cdf_plots(seed, cache):
-
-    outdir = os.path.join(
-        VALIDATION_DIR,
-        f"seed_{seed}"
-    )
-
-    variables = [
-        "Te1",
-        "Kp_index",
-        "f107_index_0",
-        "GMLT",
-    ]
-
-    for variable in variables:
-
-        train_key = f"{variable}_train"
-
-        if train_key not in cache:
+        if key not in cache:
             continue
-
-        log(f"[INFO] Seed {seed}: CDF {variable}")
 
         plt.figure(figsize=(8, 5))
 
-        for split in [
-            "train",
-            "val",
-            "test",
-        ]:
+        for split in ["train", "val", "test"]:
 
-            vals = cache[
-                f"{variable}_{split}"
-            ]
-
-            x, y = ecdf(vals)
+            x, y = ecdf(cache[f"{variable}_{split}"])
 
             plt.plot(
                 x,
                 y,
-                label=split.capitalize(),
+                label=split,
                 linewidth=2
             )
 
         plt.xlabel(variable)
         plt.ylabel("CDF")
-        plt.title(
-            f"{variable} Distribution Comparison"
-        )
+        plt.title(variable)
 
         plt.legend()
-
         plt.tight_layout()
 
         plt.savefig(
             os.path.join(
-                outdir,
+                output_dir,
                 f"cdf_{variable}.png"
             ),
-            dpi=200,
+            dpi=200
         )
 
         plt.close()
 
 
-def create_year_coverage_plot(seed, cache):
-
-    outdir = os.path.join(
-        VALIDATION_DIR,
-        f"seed_{seed}"
-    )
+def create_year_coverage_plot(output_dir, cache):
 
     plt.figure(figsize=(10, 5))
 
-    for label in [
-        "train",
-        "val",
-        "test",
-    ]:
+    for split in ["train", "val", "test"]:
 
-        years = cache[f"{label}_year"]
-
-        counts = pd.Series(
-            years
-        ).value_counts().sort_index()
+        counts = (
+            pd.Series(cache[f"{split}_year"])
+            .value_counts()
+            .sort_index()
+        )
 
         counts = counts / counts.sum()
 
@@ -310,40 +305,26 @@ def create_year_coverage_plot(seed, cache):
             counts.index,
             counts.values,
             marker="o",
-            label=label.capitalize()
+            label=split
         )
 
     plt.xlabel("Year")
     plt.ylabel("Fraction")
-    plt.title("Year Coverage")
-
     plt.legend()
-
     plt.tight_layout()
 
     plt.savefig(
         os.path.join(
-            outdir,
+            output_dir,
             "year_coverage.png"
         ),
-        dpi=200,
+        dpi=200
     )
 
     plt.close()
 
 
-def create_timeline_plot(seed):
-
-    df = pd.read_csv(
-        os.path.join(
-            f"{DATASET_PREFIX}{seed}",
-            f"block_assignment_s{seed}.csv"
-        )
-    )
-
-    df["start"] = pd.to_datetime(
-        df["start"]
-    )
+def create_timeline_plot(output_dir, block_df, seed):
 
     mapping = {
         "train": 0,
@@ -351,17 +332,14 @@ def create_timeline_plot(seed):
         "test": 2,
     }
 
-    y = [
-        mapping[x]
-        for x in df["split"]
-    ]
+    y = [mapping[x] for x in block_df["split"]]
 
     plt.figure(figsize=(14, 3))
 
     plt.scatter(
-        df["start"],
+        block_df["start"],
         y,
-        s=12
+        s=10
     )
 
     plt.yticks(
@@ -370,15 +348,14 @@ def create_timeline_plot(seed):
     )
 
     plt.title(
-        f"Block Timeline Seed {seed}"
+        f"Seed {seed}"
     )
 
     plt.tight_layout()
 
     plt.savefig(
         os.path.join(
-            VALIDATION_DIR,
-            f"seed_{seed}",
+            output_dir,
             "timeline.png"
         ),
         dpi=200
@@ -387,124 +364,378 @@ def create_timeline_plot(seed):
     plt.close()
 
 
-def validate_seed(seed):
+# ======================================================================================
+# Cache Builder
+# ======================================================================================
 
-    log(f"\n========== SEED {seed} ==========")
+def build_cache(train_ds, val_ds, test_ds):
 
-    train_ds, val_ds, test_ds, storm_ds = load_seed(seed)
+    cache = {}
+
+    for split, ds in [
+        ("train", train_ds),
+        ("val", val_ds),
+        ("test", test_ds),
+    ]:
+
+        times = pd.to_datetime(
+            ds["DateTimeFormatted"]
+        )
+
+        cache[f"{split}_times"] = times.values.astype(
+            "datetime64[m]"
+        )
+
+        cache[f"{split}_year"] = times.year.values
+
+        for variable in KEY_FEATURES:
+
+            if variable in ds.column_names:
+
+                cache[
+                    f"{variable}_{split}"
+                ] = np.asarray(
+                    ds[variable]
+                )
+
+    return cache
+
+
+# ======================================================================================
+# Individual Dataset Validation
+# ======================================================================================
+
+def validate_single_dataset(
+    dataset_dir,
+    seed,
+    block_hours,
+    output_dir,
+):
+
+    report = ValidationReport()
+
+    report.section(
+        f"DATASET VALIDATION - SEED {seed}"
+    )
+
+    train_ds, val_ds, test_ds, storm_ds = \
+        load_dataset_group(dataset_dir)
 
     cache = build_cache(
-        seed,
         train_ds,
         val_ds,
-        test_ds,
+        test_ds
     )
 
-    report = []
+    train_times = set(cache["train_times"])
+    val_times = set(cache["val_times"])
+    test_times = set(cache["test_times"])
 
-    report.append(
-        f"Seed {seed} Validation Report\n"
+    storm_times = set(
+        pd.to_datetime(
+            storm_ds["DateTimeFormatted"]
+        ).values.astype("datetime64[m]")
     )
 
-    report.append(
-        "=" * 80 + "\n"
+    report.section("DATASET COUNTS")
+
+    report.info(
+        "Train Samples",
+        f"{len(train_ds):,}"
     )
 
-    report.append(
-        f"Train samples: {len(train_ds):,}\n"
+    report.info(
+        "Validation Samples",
+        f"{len(val_ds):,}"
     )
 
-    report.append(
-        f"Validation samples: {len(val_ds):,}\n"
+    report.info(
+        "Test Samples",
+        f"{len(test_ds):,}"
     )
 
-    report.append(
-        f"Test samples: {len(test_ds):,}\n"
+    report.info(
+        "Storm Samples",
+        f"{len(storm_ds):,}"
     )
 
-    report.append(
-        f"Storm samples: {len(storm_ds):,}\n\n"
-    )
+    report.section("OVERLAP VALIDATION")
 
-    combinations_to_check = [
-        ("train_times", "val_times"),
-        ("train_times", "test_times"),
-        ("val_times", "test_times"),
+    pairs = [
+        ("Train-Val", train_times, val_times),
+        ("Train-Test", train_times, test_times),
+        ("Val-Test", val_times, test_times),
+        ("Train-Storm", train_times, storm_times),
+        ("Val-Storm", val_times, storm_times),
+        ("Test-Storm", test_times, storm_times),
     ]
 
-    report.append(
-        "Check 3 - Overlap\n"
-    )
+    for name, a, b in pairs:
 
-    for a, b in combinations_to_check:
+        overlap = len(a.intersection(b))
 
-        overlap = len(
-            np.intersect1d(
-                cache[a],
-                cache[b]
+        if overlap == 0:
+            report.pass_check(name)
+        else:
+            report.fail_check(
+                name,
+                f"{overlap} overlapping timestamps"
             )
+
+    report.section("PARTITION COMPLETENESS")
+
+    union_count = len(
+        train_times
+        | val_times
+        | test_times
+        | storm_times
+    )
+
+    expected_count = (
+        len(train_times)
+        + len(val_times)
+        + len(test_times)
+        + len(storm_times)
+    )
+
+    if union_count == expected_count:
+        report.pass_check(
+            "complete_partition"
+        )
+    else:
+        report.fail_check(
+            "complete_partition",
+            f"union={union_count}, expected={expected_count}"
         )
 
-        report.append(
-            f"{a} vs {b}: {overlap}\n"
+    report.section("STORM WINDOW VALIDATION")
+
+    storm_dt = pd.to_datetime(
+        storm_ds["DateTimeFormatted"]
+    )
+
+    if len(storm_dt) == 0:
+        report.fail_check(
+            "storm_dataset",
+            "empty"
+        )
+    else:
+
+        if storm_dt.min() >= STORM_START:
+            report.pass_check(
+                "storm_start_boundary"
+            )
+        else:
+            report.fail_check(
+                "storm_start_boundary",
+                str(storm_dt.min())
+            )
+
+        if storm_dt.max() < STORM_END:
+            report.pass_check(
+                "storm_end_boundary"
+            )
+        else:
+            report.fail_check(
+                "storm_end_boundary",
+                str(storm_dt.max())
+            )
+
+    report.section("FEATURE QUALITY")
+
+    for feature in KEY_FEATURES:
+
+        for split_name, ds in [
+            ("train", train_ds),
+            ("val", val_ds),
+            ("test", test_ds),
+            ("storm", storm_ds),
+        ]:
+
+            if feature not in ds.column_names:
+                continue
+
+            vals = pd.to_numeric(
+                pd.Series(ds[feature]),
+                errors="coerce"
+            ).values
+
+            nan_count = np.isnan(vals).sum()
+
+            inf_count = np.isinf(vals).sum()
+
+            if nan_count == 0:
+                report.pass_check(
+                    f"{split_name}_{feature}_nan"
+                )
+            else:
+                report.fail_check(
+                    f"{split_name}_{feature}_nan",
+                    int(nan_count)
+                )
+
+            if inf_count == 0:
+                report.pass_check(
+                    f"{split_name}_{feature}_inf"
+                )
+            else:
+                report.fail_check(
+                    f"{split_name}_{feature}_inf",
+                    int(inf_count)
+                )
+
+    report.section("BLOCK ASSIGNMENT VALIDATION")
+
+    block_file = None
+
+    for f in os.listdir(dataset_dir):
+
+        if (
+            f.startswith(
+                f"block_assignment_{block_hours}h_s{seed}"
+            )
+            and f.endswith(".csv")
+        ):
+            block_file = os.path.join(
+                dataset_dir,
+                f
+            )
+
+    if block_file is None:
+
+        report.fail_check(
+            "block_assignment_file",
+            "missing"
         )
 
-    report.append("\n")
+    else:
 
-    val_gaps = min_gap_minutes(
-        cache["train_times"],
-        cache["val_times"]
-    )
-
-    test_gaps = min_gap_minutes(
-        cache["train_times"],
-        cache["test_times"]
-    )
-
-    report.append(
-        "Check 4 - 6 Hour Buffer\n"
-    )
-
-    report.append(
-        f"Validation minimum gap: {val_gaps.min()} minutes\n"
-    )
-
-    report.append(
-        f"Test minimum gap: {test_gaps.min()} minutes\n\n"
-    )
-
-    report.append(
-        "Check 5 - Storm Dataset\n"
-    )
-
-    if os.path.exists(OLD_STORM_DATASET):
-
-        old_ds = datasets.Dataset.load_from_disk(
-            OLD_STORM_DATASET
+        report.pass_check(
+            "block_assignment_file"
         )
 
-        identical = (
-            len(old_ds) == len(storm_ds)
-            and checksum_column(old_ds, "Te1")
-            == checksum_column(storm_ds, "Te1")
+        block_df = pd.read_csv(block_file)
+
+        expected_samples = (
+            len(train_ds)
+            + len(val_ds)
+            + len(test_ds)
         )
 
-        report.append(
-            f"Storm identical: {identical}\n\n"
+        recorded_samples = (
+            block_df["n_samples"].sum()
         )
 
-    variables = [
-        "Te1",
-        "Kp_index",
-        "f107_index_0",
-        "GMLT",
-    ]
+        if recorded_samples == expected_samples:
+            report.pass_check(
+                "block_sample_counts"
+            )
+        else:
+            report.fail_check(
+                "block_sample_counts",
+                f"recorded={recorded_samples}, expected={expected_samples}"
+            )
 
-    report.append(
-        "Check 9 - Distribution Statistics\n\n"
-    )
+        block_df["start"] = pd.to_datetime(
+            block_df["start"]
+        )
 
-    for variable in variables:
+        block_df["end"] = pd.to_datetime(
+            block_df["end"]
+        )
+
+        expected = pd.Timedelta(
+            hours=block_hours
+        )
+
+        durations = (
+            block_df["end"]
+            - block_df["start"]
+        )
+
+        if (durations == expected).all():
+
+            report.pass_check(
+                "block_duration"
+            )
+
+        else:
+
+            report.fail_check(
+                "block_duration",
+                "unexpected duration"
+            )
+
+        if block_df["block_id"].is_unique:
+            report.pass_check(
+                "unique_block_ids"
+            )
+        else:
+            report.fail_check(
+                "unique_block_ids",
+                "duplicate block ids"
+            )
+
+        counts = (
+            block_df["split"]
+            .value_counts(normalize=True)
+            .to_dict()
+        )
+
+        report.info(
+            "Train Block Fraction",
+            counts.get("train", 0)
+        )
+
+        report.info(
+            "Validation Block Fraction",
+            counts.get("val", 0)
+        )
+
+        report.info(
+            "Test Block Fraction",
+            counts.get("test", 0)
+        )
+
+        train_frac = counts.get("train", 0)
+        val_frac = counts.get("val", 0)
+        test_frac = counts.get("test", 0)
+
+        tolerance = 0.02
+
+        if abs(train_frac - EXPECTED_TRAIN_FRAC) <= tolerance:
+            report.pass_check("train_fraction")
+        else:
+            report.fail_check(
+                "train_fraction",
+                train_frac
+            )
+
+        if abs(val_frac - EXPECTED_VAL_FRAC) <= tolerance:
+            report.pass_check("val_fraction")
+        else:
+            report.fail_check(
+                "val_fraction",
+                val_frac
+            )
+
+        if abs(test_frac - EXPECTED_TEST_FRAC) <= tolerance:
+            report.pass_check("test_fraction")
+        else:
+            report.fail_check(
+                "test_fraction",
+                test_frac
+            )
+
+        create_timeline_plot(
+            output_dir,
+            block_df,
+            seed
+        )
+
+    report.section("DISTRIBUTION ANALYSIS")
+
+    for variable in KEY_FEATURES:
 
         key = f"{variable}_train"
 
@@ -523,121 +754,161 @@ def validate_seed(seed):
             f"{variable}_test"
         ]
 
-        report.append(
-            f"Variable: {variable}\n"
+        report.info(
+            f"{variable}_KS_train_val",
+            ks_2samp(
+                train_vals,
+                val_vals
+            ).statistic
         )
 
-        for name, vals in [
-            ("Train", train_vals),
-            ("Validation", val_vals),
-            ("Test", test_vals),
-        ]:
-
-            vals = vals[
-                ~np.isnan(vals)
-            ]
-
-            report.append(
-                f"{name}: "
-                f"mean={vals.mean():.4f}, "
-                f"median={np.median(vals):.4f}, "
-                f"std={vals.std():.4f}, "
-                f"min={vals.min():.4f}, "
-                f"max={vals.max():.4f}\n"
-            )
-
-        report.append(
-            f"KS(train,val)="
-            f"{ks_2samp(train_vals, val_vals).statistic:.6f}\n"
+        report.info(
+            f"{variable}_KS_train_test",
+            ks_2samp(
+                train_vals,
+                test_vals
+            ).statistic
         )
-
-        report.append(
-            f"KS(train,test)="
-            f"{ks_2samp(train_vals, test_vals).statistic:.6f}\n"
-        )
-
-        report.append(
-            f"KS(val,test)="
-            f"{ks_2samp(val_vals, test_vals).statistic:.6f}\n\n"
-        )
-
-    if "GMLT_train" in cache:
-
-        report.append(
-            "MLT Occupancy\n"
-        )
-
-        bins = np.arange(
-            0,
-            25,
-            1
-        )
-
-        for split in [
-            "train",
-            "val",
-            "test",
-        ]:
-
-            hist, _ = np.histogram(
-                cache[f"GMLT_{split}"],
-                bins=bins
-            )
-
-            hist = hist / hist.sum()
-
-            report.append(
-                f"{split}: "
-                + ", ".join(
-                    f"{x:.4f}"
-                    for x in hist
-                )
-                + "\n"
-            )
-
-    write_report(
-        seed,
-        "".join(report)
-    )
 
     create_cdf_plots(
-        seed,
+        output_dir,
         cache
     )
 
-    create_timeline_plot(seed)
-
     create_year_coverage_plot(
-        seed,
+        output_dir,
         cache
+    )
+
+    write_text(
+        os.path.join(
+            output_dir,
+            "validation_report.txt"
+        ),
+        report.finalize()
     )
 
     return {
         "seed": seed,
-        "cache": cache
+        "storm_checksum": dataset_checksum(storm_ds),
+        "storm_count": len(storm_ds),
+        "storm_times": storm_times,
     }
 
 
-def write_cross_seed_report():
+# ======================================================================================
+# Cross-Seed Validation
+# ======================================================================================
 
-    lines = []
-
-    lines.append(
-        "Cross Seed Comparison\n"
+def validate_cross_seed(
+    block_hours,
+    dataset_infos,
+):
+    if not dataset_infos:
+        raise RuntimeError(
+            f"No datasets found for {block_hours}h"
+        )
+        
+    output_dir = os.path.join(
+        VALIDATION_ROOT,
+        f"{block_hours}h"
     )
 
-    lines.append(
-        "=" * 80 + "\n\n"
+    report = ValidationReport()
+
+    report.section(
+        f"CROSS-SEED VALIDATION ({block_hours}h)"
     )
 
+    report.section(
+        "STORM CONSISTENCY"
+    )
+    
+    if len(dataset_infos) == 1:
+        report.info(
+            "cross_seed_validation",
+            "skipped (single seed)"
+        )
+
+        write_text(
+            os.path.join(
+                output_dir,
+                "summary.txt"
+            ),
+            report.finalize()
+        )
+
+        return
+    baseline = dataset_infos[0]
+
+    for info in dataset_infos[1:]:
+
+        if (
+            info["storm_times"]
+            == baseline["storm_times"]
+        ):
+            report.pass_check(
+                f"storm_times_seed_{info['seed']}"
+            )
+        else:
+            report.fail_check(
+                f"storm_times_seed_{info['seed']}",
+                "mismatch"
+            )
+
+        if (
+            info["storm_checksum"]
+            == baseline["storm_checksum"]
+        ):
+            report.pass_check(
+                f"storm_checksum_seed_{info['seed']}"
+            )
+        else:
+            report.fail_check(
+                f"storm_checksum_seed_{info['seed']}",
+                "mismatch"
+            )
+
+        if (
+            info["storm_count"]
+            == baseline["storm_count"]
+        ):
+            report.pass_check(
+                f"storm_count_seed_{info['seed']}"
+            )
+        else:
+            report.fail_check(
+                f"storm_count_seed_{info['seed']}",
+                "mismatch"
+            )
+    report.section(
+        "BLOCK ASSIGNMENT DIVERSITY"
+    )
+    
     assignments = {}
 
-    for seed in SEEDS:
+    for info in dataset_infos:
+
+        seed = info["seed"]
+
+        dataset_dir = next(
+            d["path"]
+            for d in groups[block_hours]
+            if d["seed"] == seed
+        )
+
+        file_name = next(
+            x
+            for x in os.listdir(dataset_dir)
+            if x.startswith(
+                f"block_assignment_{block_hours}h_s{seed}"
+            )
+        )
 
         df = pd.read_csv(
             os.path.join(
-                f"{DATASET_PREFIX}{seed}",
-                f"block_assignment_s{seed}.csv"
+                dataset_dir,
+                file_name
             )
         )
 
@@ -647,45 +918,95 @@ def write_cross_seed_report():
         )
 
     for a, b in combinations(
-        SEEDS,
+        assignments.keys(),
         2
     ):
 
-        difference = (
+        diff = (
             assignments[a]
             != assignments[b]
         ).mean()
 
-        lines.append(
-            f"Seed {a} vs Seed {b}: "
-            f"{100*difference:.2f}% different blocks\n"
+        report.info(
+            f"seed_{a}_vs_seed_{b}_different_fraction",
+            f"{100.0 * diff:.2f}%"
         )
 
-    with open(
+    write_text(
         os.path.join(
-            VALIDATION_DIR,
-            "summary_all_seeds.txt"
+            output_dir,
+            "summary.txt"
         ),
-        "w"
-    ) as f:
+        report.finalize()
+    )
 
-        f.write("".join(lines))
 
+# ======================================================================================
+# Main
+# ======================================================================================
 
 def main():
 
-    log(
-        "\n========== DATASET VALIDATION ==========\n"
-    )
+    global groups
 
-    for seed in SEEDS:
-        validate_seed(seed)
+    groups = discover_datasets()
 
-    write_cross_seed_report()
+    if not groups:
+        raise RuntimeError(
+            "No block-split datasets discovered."
+        )
 
-    log(
-        "\nValidation complete."
-    )
+    for block_hours in sorted(groups):
+
+        log(
+            f"\n========== "
+            f"{block_hours}h "
+            f"=========="
+        )
+
+        block_output = os.path.join(
+            VALIDATION_ROOT,
+            f"{block_hours}h"
+        )
+
+        os.makedirs(
+            block_output,
+            exist_ok=True
+        )
+
+        cross_seed_info = []
+
+        for item in groups[block_hours]:
+            seed = item["seed"]
+            dataset_dir = item["path"]
+
+            seed_out = os.path.join(
+                block_output,
+                f"seed_{seed}"
+            )
+
+            os.makedirs(
+                seed_out,
+                exist_ok=True
+            )
+
+            result = validate_single_dataset(
+                dataset_dir,
+                seed,
+                block_hours,
+                seed_out,
+            )
+
+            cross_seed_info.append(
+                result
+            )
+
+        validate_cross_seed(
+            block_hours,
+            cross_seed_info
+        )
+
+    log("\nValidation complete.")
 
 
 if __name__ == "__main__":

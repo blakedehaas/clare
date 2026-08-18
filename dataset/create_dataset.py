@@ -13,10 +13,12 @@ split_seed = int(os.environ.get("SPLIT_SEED", 0))
 print(f"[INFO] Using split_seed={split_seed}")
 
 # CONFIGURATION
-block_days = 7
+block_hours = int(os.environ.get("BLOCK_HOURS", 12))
 train_frac, val_frac = 0.8, 0.1
-boundary_trim = pd.Timedelta("6h")
-base_output_dir = f"processed_dataset_blocksplit_s{split_seed}"
+base_output_dir = (
+    f"processed_dataset_blocksplit_"
+    f"{block_hours}h_s{split_seed}"
+)
 
 storm_validation_start = '1991-01-31' # Inclusive start date of the solar storm period
 storm_validation_end = '1991-02-07' # Exclusive end date of the solar storm period
@@ -331,7 +333,11 @@ print(f"Extracted {len(val_df)} rows for held-out storm testing")
 rng = np.random.default_rng(split_seed)
 t0 = pd.Timestamp("1990-01-01")
 
-block_id = ((remaining_df.index - t0).days // block_days).astype(int)
+block_id = (
+    (remaining_df.index - t0)
+    // pd.Timedelta(hours=block_hours)
+).astype(int)
+
 unique_blocks = np.sort(np.unique(block_id))
 shuffled = rng.permutation(unique_blocks)
 
@@ -354,32 +360,6 @@ train_df = remaining_df[assignment == "train"].copy()
 val_blocks_df = remaining_df[assignment == "val"].copy()
 test_df = remaining_df[assignment == "test"].copy()
 
-
-def trim_edges(df_split):
-    keep = pd.Series(True, index=df_split.index)
-    bid = (((df_split.index - t0) // pd.Timedelta(days=1)) // block_days).astype(int)
-
-    for b in np.unique(bid):
-        if (b - 1) in train_blocks:
-            left_edge = t0 + pd.Timedelta(days=int(b) * block_days)
-            keep &= ~(
-                (bid == b)
-                & (df_split.index < left_edge + boundary_trim)
-            )
-
-        if (b + 1) in train_blocks:
-            right_edge = t0 + pd.Timedelta(days=(int(b) + 1) * block_days)
-            keep &= ~(
-                (bid == b)
-                & (df_split.index >= right_edge - boundary_trim)
-            )
-
-    return df_split[keep]
-
-
-val_blocks_df = trim_edges(val_blocks_df)
-test_df = trim_edges(test_df)
-
 # Record block assignment
 rows = []
 for b in unique_blocks:
@@ -391,8 +371,8 @@ for b in unique_blocks:
 
     rows.append({
         "block_id": int(b),
-        "start": t0 + pd.Timedelta(days=int(b) * block_days),
-        "end": t0 + pd.Timedelta(days=(int(b) + 1) * block_days),
+        "start": t0 + pd.Timedelta(hours=int(b) * block_hours),
+        "end": t0 + pd.Timedelta(hours=(int(b) + 1) * block_hours),
         "split": split,
         "n_samples": int((block_id == b).sum()),
     })
@@ -400,7 +380,7 @@ for b in unique_blocks:
 pd.DataFrame(rows).to_csv(
     os.path.join(
         base_output_dir,
-        f"block_assignment_s{split_seed}.csv",
+        f"block_assignment_{block_hours}h_s{split_seed}.csv",
     ),
     index=False,
 )
