@@ -2,35 +2,50 @@
 #PBS -N create_dataset_job
 #PBS -A UCUL0008
 #PBS -l select=1:ncpus=4:mem=64GB
-#PBS -l walltime=24:00:00
+#PBS -l walltime=6:00:00
 #PBS -q casper
 #PBS -j oe
 #PBS -m abe
 #PBS -M blake.dehaas@lasp.colorado.edu
 
-# Load NCAR's shared conda module
-module load conda
-
-# Define your custom environment name
-ENV_NAME="aurora_env"
-
-# Check if the environment exists; if not, create and install packages
-if ! conda info --envs | grep -q "$ENV_NAME"; then
-    echo "[INFO] Creating conda environment: $ENV_NAME"
-    conda create --name "$ENV_NAME" --clone npl -y
-    conda activate "$ENV_NAME"
-    echo "[INFO] Installing datasets package"
-    conda install -c huggingface datasets -y
-else
-    echo "[INFO] Activating existing conda environment: $ENV_NAME"
-    conda activate "$ENV_NAME"
-fi
-
 # Navigate to the directory from which the job was submitted
 cd "$PBS_O_WORKDIR" || { echo "[ERROR] Failed to change directory to \$PBS_O_WORKDIR."; exit 1; }
 
-echo "[INFO] Job started on host: $(hostname)"
+echo "[INFO] Job started at: $(date)"
+echo "[INFO] Job running on host: $(hostname)"
+echo "[INFO] Job ID: $PBS_JOBID"
 echo "[INFO] Current working directory: $(pwd)"
+echo ""
 
-# Run your Python script
+# Load NCAR modules (matching run_train.pbs)
+module --force purge
+module load ncarenv/24.12
+module load gcc
+module load conda
+
+# Activate virtual environment
+source /glade/campaign/univ/ucul0008/auroral_precipitation_ml/clare/clare_venv/bin/activate || {
+echo "[ERROR] Failed to activate clare_venv"
+exit 1
+}
+
+echo "[INFO] Environment activated: $(which python)"
+python --version
+echo ""
+
+echo "[INFO] BLOCK_HOURS=${BLOCK_HOURS}"
+echo "[INFO] SPLIT_SEED=${SPLIT_SEED}"
+echo ""
+
+# Run dataset creation
 python create_dataset.py
+
+EXIT_CODE=$?
+
+if [ $EXIT_CODE -ne 0 ]; then
+echo "[ERROR] Dataset creation failed with exit code: $EXIT_CODE"
+exit $EXIT_CODE
+fi
+
+echo ""
+echo "[INFO] Dataset creation completed successfully at: $(date) with ${BLOCK_HOURS} BLOCK_HOURS and ${SPLIT_SEED} SPLIT_SEED"

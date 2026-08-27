@@ -1,53 +1,74 @@
 #!/bin/bash
-#PBS -N train_1_48
+#PBS -N train_clare_12h_s0
 #PBS -A UCUL0008
-#PBS -l select=1:ncpus=8:ngpus=1:mem=32GB
-#PBS -l walltime=24:00:00
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64GB
+#PBS -l walltime=4:00:00
 #PBS -q casper
 #PBS -j oe
 #PBS -m abe
 #PBS -M blake.dehaas@lasp.colorado.edu
 
-cd /glade/campaign/univ/ucul0008/auroral_precipitation_ml/clare
+# Navigate to the directory from which the job was submitted
+cd "$PBS_O_WORKDIR" || { echo "[ERROR] Failed to change directory to \$PBS_O_WORKDIR."; exit 1; }
 
-echo "Job started at: $(date)"
-echo "Job running on host: $(hostname)"
-echo "Job ID: $PBS_JOBID"
-echo "Working directory: $(pwd)"
+echo "[INFO] Job started at: $(date)"
+echo "[INFO] Job running on host: $(hostname)"
+echo "[INFO] Job ID: $PBS_JOBID"
+echo "[INFO] Current working directory: $(pwd)"
 echo ""
 
-# Load necessary modules
-echo "Loading modules..."
-module purge
-module load ncarenv/24.12 
-module load conda
+# Load NCAR's modules (matching setup_env.sh)
+module --force purge
+module load ncarenv/24.12
+module load gcc
 module load cuda/12.8.0
-echo "Modules loaded."
-echo ""
+module load conda
 
-# Activate your environment
-echo "Activating clare_venv"
+# Activate your venv environment
 source clare_venv/bin/activate
-echo "Environment activated: $(which python)"
+
+echo "[INFO] Environment activated: $(which python)"
 echo ""
 
 export WANDB_MODE=online
 
 # Display GPU hardware information
-echo "GPU(s) allocated by PBS:"
+echo "[INFO] GPU(s) allocated by PBS:"
 echo "CUDA_VISIBLE_DEVICES = $CUDA_VISIBLE_DEVICES"
 echo ""
 echo "nvidia-smi output:"
 nvidia-smi
 echo ""
 
-# Run your training script
-echo "Running Python script: train.py..."
-echo "Training started at: $(date)"
-python train.py
-
-EXIT_CODE=$? # Capture the exit code of the python script
-echo "Python script finished with exit code: $EXIT_CODE"
+echo "[INFO] BLOCK_HOURS=${BLOCK_HOURS}"
+echo "[INFO] SPLIT_SEED=${SPLIT_SEED}"
 echo ""
 
-echo "Training finished at: $(date)"
+echo "============================================================"
+echo "[INFO] Launching classification training"
+echo "============================================================"
+
+python train.py
+
+EXIT_CODE=$?
+
+if [ $EXIT_CODE -ne 0 ]; then
+    echo "[ERROR] Classification training failed with exit code: $EXIT_CODE"
+    exit $EXIT_CODE
+fi
+
+echo "============================================================"
+echo "[INFO] Launching continuous training"
+echo "============================================================"
+
+python train.py --continuous
+
+EXIT_CODE=$?
+
+if [ $EXIT_CODE -ne 0 ]; then
+    echo "[ERROR] Continuous training failed with exit code: $EXIT_CODE"
+    exit $EXIT_CODE
+fi
+
+echo ""
+echo "[INFO] Training completed successfully at: $(date) with BLOCK_HOURS=${BLOCK_HOURS} and SPLIT_SEED=${SPLIT_SEED}"

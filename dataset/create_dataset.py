@@ -5,19 +5,23 @@ import pandas as pd
 from tqdm import tqdm
 import datasets
 import pyarrow as pa
-from sklearn.model_selection import train_test_split
 import math
 import shutil
 
 # Set random seeds for reproducibility
-np.random.seed(42)
+split_seed = int(os.environ.get("SPLIT_SEED", 0))
+print(f"[INFO] Using split_seed={split_seed}")
 
 # CONFIGURATION
-base_output_dir = "processed_dataset_01_31_storm"
-storm_validation_start = '1991-01-31' # Inclusive start date of the solar storm period
-storm_validation_end = '1991-02-07'  # Exclusive end date of the solar storm period
-test_normal_size = 50000  # Number of rows for the test set
+block_hours = int(os.environ.get("BLOCK_HOURS", 12))
+train_frac, val_frac = 0.8, 0.1
+base_output_dir = (
+    f"processed_dataset_blocksplit_"
+    f"{block_hours}h_s{split_seed}"
+)
 
+storm_validation_start = '1991-01-31' # Inclusive start date of the solar storm period
+storm_validation_end = '1991-02-07' # Exclusive end date of the solar storm period
 
 def check_data_files():
     """Check if required data files exist and return proper paths."""
@@ -256,7 +260,7 @@ kp_df.sort_index(inplace=True)
 
 print("Adding instantaneous Kp index...")
 # Round filtered_df index to nearest hour to match kp_df hourly data
-rounded_index = filtered_df.index.round('H')
+rounded_index = filtered_df.index.round('h')
 filtered_df['Kp_index'] = kp_df['Kp_index'].reindex(rounded_index).values
 
 # -----------------------------------
@@ -317,19 +321,83 @@ if os.path.exists(base_output_dir):
 
 os.makedirs(base_output_dir, exist_ok=True)
 
-# 1. Extract the May 1991 solar storm period for validation # Start date of the solar storm period
+# 1. Extract the Jan-Feb 1991 storm period for held-out storm testing
 val_mask = (filtered_df.index >= storm_validation_start) & (filtered_df.index < storm_validation_end)
 val_df = filtered_df.loc[val_mask].copy()
 remaining_df = filtered_df.loc[~val_mask].copy()
 del filtered_df  # Free up memory
 
-print(f"Extracted {len(val_df)} rows for validation (May 1991 solar storm period)")
+print(f"Extracted {len(val_df)} rows for held-out storm testing")
 
-# 2. Split remaining data to get test set (50,000 rows)
-train_df, test_df = train_test_split(remaining_df, test_size=test_normal_size, random_state=42)
-del remaining_df  # Free up memory
+# 2. Block-based train/val/test split
+rng = np.random.default_rng(split_seed)
+t0 = pd.Timestamp("1990-01-01")
 
-print(f"Split remaining data into {len(train_df)} training rows and {len(test_df)} test rows")
+block_id = (
+    (remaining_df.index - t0)
+    // pd.Timedelta(hours=block_hours)
+).astype(int)
+
+unique_blocks = np.sort(np.unique(block_id))
+shuffled = rng.permutation(unique_blocks)
+
+n_train = int(round(train_frac * len(unique_blocks)))
+n_val = int(round(val_frac * len(unique_blocks)))
+
+train_blocks = set(shuffled[:n_train])
+val_blocks = set(shuffled[n_train:n_train + n_val])
+test_blocks = set(shuffled[n_train + n_val:])
+
+assignment = pd.Series(block_id, index=remaining_df.index).map(
+    lambda b: (
+        "train"
+        if b in train_blocks
+        else ("val" if b in val_blocks else "test")
+    )
+)
+
+train_df = remaining_df[assignment == "train"].copy()
+val_blocks_df = remaining_df[assignment == "val"].copy()
+test_df = remaining_df[assignment == "test"].copy()
+
+# Record block assignment
+rows = []
+for b in unique_blocks:
+    split = (
+        "train"
+        if b in train_blocks
+        else ("val" if b in val_blocks else "test")
+    )
+
+    rows.append({
+        "block_id": int(b),
+        "start": t0 + pd.Timedelta(hours=int(b) * block_hours),
+        "end": t0 + pd.Timedelta(hours=(int(b) + 1) * block_hours),
+        "split": split,
+        "n_samples": int((block_id == b).sum()),
+    })
+
+pd.DataFrame(rows).to_csv(
+    os.path.join(
+        base_output_dir,
+        f"block_assignment_{block_hours}h_s{split_seed}.csv",
+    ),
+    index=False,
+)
+
+print(
+    f"Blocks: {len(train_blocks)} train / "
+    f"{len(val_blocks)} val / "
+    f"{len(test_blocks)} test"
+)
+
+print(
+    f"Samples: {len(train_df)} train / "
+    f"{len(val_blocks_df)} val / "
+    f"{len(test_df)} test"
+)
+
+del remaining_df
 
 # Function to save dataset
 def save_dataset(df, name, output_dir):
@@ -342,7 +410,11 @@ def save_dataset(df, name, output_dir):
 # Save validation and test datasets
 save_dataset(val_df, "test-storm", "test-storm")
 del val_df
-save_dataset(test_df, "test-normal", "test-normal")
+
+save_dataset(val_blocks_df, "val-blocks", "val-blocks")
+del val_blocks_df
+
+save_dataset(test_df, "test-blocks", "test-blocks")
 del test_df
 
 # 3. Save the training dataset in chunks of 250,000 rows
