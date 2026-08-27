@@ -5,6 +5,7 @@ from tqdm import tqdm
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from sklearn.metrics import accuracy_score, f1_score
 from torch.utils.data import DataLoader
 import pandas as pd
 import numpy as np
@@ -17,14 +18,21 @@ import constants
 # --- Command Line Arguments ---
 parser = argparse.ArgumentParser(description="Train model on seed-split dataset.")
 parser.add_argument("--seed", type=int, default=int(os.environ.get("SPLIT_SEED", 0)), help="Seed ID for dataset (0, 1, or 2)")
+parser.add_argument("--block-hours", type=int, default=int(os.environ.get("BLOCK_HOURS", 12)))
 parser.add_argument("--continuous", action="store_true", help="Train continuous regression variant (MSE loss, 1 output) instead of classification.")
 args = parser.parse_args()
 
 seed = args.seed
-base_model_name = '1_47'
+block_hours = args.block_hours
+base_model_name = '2_0'
 # Distinct model name so continuous doesn't overwrite classification checkpoints
-model_name = f"{base_model_name}_s{seed}_continuous" if args.continuous else f"{base_model_name}_s{seed}"
-dataset_dir = f"dataset/processed_dataset_blocksplit_s{seed}"
+model_name = (
+    f"{base_model_name}_{block_hours}h_s{seed}_continuous"
+    if args.continuous
+    else f"{base_model_name}_{block_hours}h_s{seed}"
+)
+
+dataset_dir = f"dataset/processed_dataset_blocksplit_{block_hours}h_s{seed}"
 
 print(f"[INFO] Running training for Seed {seed}")
 print(f"[INFO] Mode: {'Continuous Regression' if args.continuous else 'Classification'}")
@@ -36,7 +44,7 @@ num_workers = len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") e
 
 # Hyperparameters
 batch_size = 512
-num_epochs = 10
+num_epochs = 100
 max_lr = 8e-4
 min_lr = max_lr / 1000
 log_every_step = 10
@@ -90,9 +98,11 @@ index_groups = {
 }
 
 os.makedirs('checkpoints', exist_ok=True)
-# Both classification and continuous share the exact same inputs! 
-# We use the base model stats file so it can load the precomputed normalization constants seamlessly.
-stats_file = f'checkpoints/{base_model_name}_s{seed}_norm_stats.json'
+# Both classification and continuous share the exact same inputs
+# We use the base model stats file so it can load the precomputed normalization constants
+stats_file = (
+    f'checkpoints/{base_model_name}_{block_hours}h_s{seed}_norm_stats.json'
+)
 
 if os.path.exists(stats_file):
     print(f"[INFO] Loading existing normalization stats from {stats_file}")
@@ -106,7 +116,7 @@ else:
         group_values = np.concatenate([train_ds.with_format("pandas")[col].values for col in group_cols])
         means[group_name] = float(np.mean(group_values))
         stds[group_name] = float(np.std(group_values))
-    
+
     with open(stats_file, 'w') as f:
         json.dump({'mean': means, 'std': stds}, f)
 
@@ -153,13 +163,21 @@ else:
     
 optimizer = optim.AdamW(model.parameters(), lr=max_lr)
 
-total_train_steps = num_epochs * len(train_loader)
-scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=total_train_steps, eta_min=min_lr)
+scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+    optimizer,
+    mode="min",
+    factor=0.5,
+    patience=3,
+    threshold=1e-4,
+    threshold_mode="rel",
+    min_lr=min_lr,
+)
 
 wandb.init(
     project="clare",
     name=model_name,
     config={
+        "block_hours": block_hours,
         "seed": seed,
         "mode": "continuous" if args.continuous else "classification",
         "dataset_size": len(train_ds),
@@ -170,6 +188,10 @@ wandb.init(
 def evaluate_model(model, data_loader, criterion):
     model.eval()
     total_loss = 0
+
+    all_preds = []
+    all_targets = []
+    
     with torch.no_grad():
         for batch in data_loader:
             x = batch["input_ids"].to("cuda")
@@ -179,16 +201,64 @@ def evaluate_model(model, data_loader, criterion):
             
             # Align output shapes safely for MSE
             if args.continuous:
-                loss = criterion(y_pred.squeeze(-1), y)
+                preds = y_pred.squeeze(-1)
+                loss = criterion(preds, y)
+
+                all_preds.append(preds.cpu())
+                all_targets.append(y.cpu())
             else:
                 loss = criterion(y_pred, y)
+
+                all_preds.append(y_pred.argmax(dim=1).cpu())
+                all_targets.append(y.cpu())
                 
             total_loss += loss.item()
-    return total_loss / len(data_loader)
+            
+    metrics = {
+        "loss": total_loss / len(data_loader)
+    }
+
+    preds = torch.cat(all_preds).numpy()
+    targets = torch.cat(all_targets).numpy()
+
+    if args.continuous:
+        metrics["rmse"] = float(np.sqrt(np.mean((preds - targets) ** 2)))
+        metrics["acc_10pct"] = float(
+            np.mean(np.abs(preds - targets) <= 0.10 * np.abs(targets))
+        )
+    else:
+        metrics["accuracy"] = float(accuracy_score(targets, preds))
+        metrics["macro_f1"] = float(f1_score(targets, preds, average="macro"))
+        
+        pred_temp = preds * 100.0 + 50.0
+        true_temp = targets * 100.0 + 50.0
+        metrics["acc_10pct"] = float(
+            np.mean(np.abs(pred_temp - true_temp) <= 0.10 * np.abs(true_temp))
+        )
+
+    return metrics
 
 total_steps = 0
 eval_interval = (len(train_loader) + 2) // 3
 best_val_loss = float("inf")
+min_delta = 1e-4
+
+best_step = 0
+best_epoch = 0
+
+best_acc_10pct = None
+best_rmse = None
+best_accuracy = None
+best_macro_f1 = None
+
+early_stop_patience = 12
+evals_since_improvement = 0
+
+lr_reduction_count = 0
+max_lr_reductions = 4
+
+stop_training = False
+early_stopped = False
 
 for epoch in range(num_epochs):
     model.train()
@@ -198,39 +268,122 @@ for epoch in range(num_epochs):
 
         optimizer.zero_grad()
         y_pred = model(x)
-        
+
         # Align output shapes safely for MSE
         if args.continuous:
             loss = criterion(y_pred.squeeze(-1), y)
         else:
             loss = criterion(y_pred, y)
-            
+
         loss.backward()
         optimizer.step()
-        scheduler.step()
-        
+
         total_steps += 1
 
         if total_steps % log_every_step == 0:
             wandb.log({
                 "train_loss": loss.item(),
-                "learning_rate": scheduler.get_last_lr()[0],
+                "learning_rate": optimizer.param_groups[0]["lr"],
                 "total_steps": total_steps
             })
-        
+
         if total_steps % eval_interval == 0:
-            val_loss = evaluate_model(model, val_loader, criterion)
-            wandb.log({"val_loss": val_loss, "total_steps": total_steps})
-            
+            val_metrics = evaluate_model(model, val_loader, criterion)
+            val_loss = val_metrics["loss"]
+
+            old_lr = optimizer.param_groups[0]["lr"]
+            scheduler.step(val_loss)
+            new_lr = optimizer.param_groups[0]["lr"]
+            if new_lr < old_lr:
+                lr_reduction_count += 1
+            wandb.log({
+                "val_loss": val_loss,
+                "learning_rate": new_lr,
+                "lr_reduction_count": lr_reduction_count,
+                "total_steps": total_steps
+            })
+
+            if args.continuous:
+                wandb.log({
+                    "val_rmse": val_metrics["rmse"],
+                    "val_acc_10pct": val_metrics["acc_10pct"],
+                    "total_steps": total_steps
+                })
+            else:
+                wandb.log({
+                    "val_accuracy": val_metrics["accuracy"],
+                    "val_macro_f1": val_metrics["macro_f1"],
+                    "val_acc_10pct": val_metrics["acc_10pct"],
+                    "total_steps": total_steps
+                })
+
             # Save "best" model based on validation subset per Reviewer 2 comment
-            if val_loss < best_val_loss:
+            if best_val_loss == float("inf") or val_loss < best_val_loss - min_delta:
                 best_val_loss = val_loss
+                best_step = total_steps
+                best_epoch = epoch + 1
+
+                best_acc_10pct = val_metrics["acc_10pct"]
+
+                if args.continuous:
+                    best_rmse = val_metrics["rmse"]
+                else:
+                    best_accuracy = val_metrics["accuracy"]
+                    best_macro_f1 = val_metrics["macro_f1"]
+
+                evals_since_improvement = 0
                 torch.save(model.state_dict(), f'./checkpoints/{model_name}_best.pth')
+            else:
+                evals_since_improvement += 1
+
+            if (
+                lr_reduction_count >= max_lr_reductions
+                and evals_since_improvement >= early_stop_patience
+            ):
+                print(
+                    f"Early stopping: no improvement after "
+                    f"{lr_reduction_count} LR reductions."
+                )
+                early_stopped = True
+                stop_training = True
+                break
+            
+    if stop_training:
+        break
 
 # Final Evaluation & Save
-final_val_loss = evaluate_model(model, val_loader, criterion)
+final_metrics = evaluate_model(model, val_loader, criterion)
+final_val_loss = final_metrics["loss"]
 print(f"\nFinal Validation Loss (Seed {seed}): {final_val_loss:.4f}")
 wandb.log({"final_val_loss": final_val_loss})
+
+wandb.summary["block_hours"] = block_hours
+wandb.summary["seed"] = seed
+wandb.summary["mode"] = "continuous" if args.continuous else "classification"
+
+wandb.summary["best_val_loss"] = best_val_loss
+wandb.summary["best_acc_10pct"] = best_acc_10pct
+wandb.summary["final_val_loss"] = final_val_loss
+
+if args.continuous:
+    wandb.summary["best_rmse"] = best_rmse
+    wandb.summary["final_rmse"] = final_metrics["rmse"]
+    wandb.summary["final_acc_10pct"] = final_metrics["acc_10pct"]
+else:
+    wandb.summary["best_accuracy"] = best_accuracy
+    wandb.summary["best_macro_f1"] = best_macro_f1
+    wandb.summary["final_accuracy"] = final_metrics["accuracy"]
+    wandb.summary["final_macro_f1"] = final_metrics["macro_f1"]
+    wandb.summary["final_acc_10pct"] = final_metrics["acc_10pct"]
+
+wandb.summary["best_step"] = best_step
+wandb.summary["best_epoch"] = best_epoch
+wandb.summary["total_steps"] = total_steps
+
+wandb.summary["lr_reduction_count"] = lr_reduction_count
+wandb.summary["final_lr"] = optimizer.param_groups[0]["lr"]
+
+wandb.summary["early_stopped"] = early_stopped
 
 checkpoint_path = f'./checkpoints/{model_name}.pth'
 torch.save(model.state_dict(), checkpoint_path)

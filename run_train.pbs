@@ -1,8 +1,8 @@
 #!/bin/bash
-#PBS -N train_clare_continuous
+#PBS -N train_clare_12h_s0
 #PBS -A UCUL0008
-#PBS -l select=1:ncpus=8:ngpus=1:mem=32GB
-#PBS -l walltime=24:00:00
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64GB
+#PBS -l walltime=4:00:00
 #PBS -q casper
 #PBS -j oe
 #PBS -m abe
@@ -40,27 +40,35 @@ echo "nvidia-smi output:"
 nvidia-smi
 echo ""
 
-# Hard-coded array of seeds for the block-split methodology
-SEEDS=(0 1 2)
+echo "[INFO] BLOCK_HOURS=${BLOCK_HOURS}"
+echo "[INFO] SPLIT_SEED=${SPLIT_SEED}"
+echo ""
 
-echo "[INFO] Starting continuous model training for seeds: ${SEEDS[*]}"
+echo "============================================================"
+echo "[INFO] Launching classification training"
+echo "============================================================"
 
-# Run the Python script for each seed sequentially
-for SEED in "${SEEDS[@]}"; do
-    echo "============================================================"
-    echo "[INFO] Launching training for Seed $SEED (Continuous Variant)"
-    echo "============================================================"
-    
-    python train.py --seed "$SEED" --continuous
-    
-    EXIT_CODE=$?
-    if [ $EXIT_CODE -ne 0 ]; then
-        echo "[ERROR] Python script failed for Seed $SEED with exit code: $EXIT_CODE"
-        # Optional: exit 1 here if you want the whole job to stop on a single failure
-    else
-        echo "[SUCCESS] Training finished for Seed $SEED"
-    fi
-    echo ""
-done
+python train.py
 
-echo "[INFO] All continuous training loops finished at: $(date)"
+EXIT_CODE=$?
+
+if [ $EXIT_CODE -ne 0 ]; then
+    echo "[ERROR] Classification training failed with exit code: $EXIT_CODE"
+    exit $EXIT_CODE
+fi
+
+echo "============================================================"
+echo "[INFO] Launching continuous training"
+echo "============================================================"
+
+python train.py --continuous
+
+EXIT_CODE=$?
+
+if [ $EXIT_CODE -ne 0 ]; then
+    echo "[ERROR] Continuous training failed with exit code: $EXIT_CODE"
+    exit $EXIT_CODE
+fi
+
+echo ""
+echo "[INFO] Training completed successfully at: $(date) with BLOCK_HOURS=${BLOCK_HOURS} and SPLIT_SEED=${SPLIT_SEED}"
