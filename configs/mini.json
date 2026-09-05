@@ -1,0 +1,8 @@
+{
+  "model_name": "mini",
+  "n_layer": 6,
+  "n_head": 6,
+  "n_embd": 192,
+  "block_size": 256,
+  "vocab_size": 1024
+}

@@ -1,0 +1,8 @@
+{
+  "model_name": "micro",
+  "n_layer": 4,
+  "n_head": 4,
+  "n_embd": 128,
+  "block_size": 256,
+  "vocab_size": 1024
+}

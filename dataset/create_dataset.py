@@ -14,9 +14,11 @@ np.random.seed(42)
 
 # CONFIGURATION
 base_output_dir = "processed_dataset_01_31_storm"
-storm_validation_start = '1991-01-31' # Inclusive start date of the solar storm period
-storm_validation_end = '1991-02-07'  # Exclusive end date of the solar storm period
-test_normal_size = 50000  # Number of rows for the test set
+storm_validation_start = '1991-01-31'  # Inclusive start timestamp for the held-out geomagnetic storm evaluation period.
+storm_validation_end = '1991-02-07'    # Exclusive end timestamp for the held-out geomagnetic storm evaluation period.
+# Contiguous equal-sized evaluation blocks eliminate spatial and temporal autocorrelation leakage.
+block_size = 150      # Contiguous measurements per block representing ~30 minutes of telemetry at 10-12s cadence.
+num_test_blocks = 334 # Total held-out non-adjacent blocks yielding 50,100 samples (~1.5% of non-storm observations).
 
 
 def check_data_files():
@@ -256,7 +258,7 @@ kp_df.sort_index(inplace=True)
 
 print("Adding instantaneous Kp index...")
 # Round filtered_df index to nearest hour to match kp_df hourly data
-rounded_index = filtered_df.index.round('H')
+rounded_index = filtered_df.index.round('h')
 filtered_df['Kp_index'] = kp_df['Kp_index'].reindex(rounded_index).values
 
 # -----------------------------------
@@ -317,19 +319,61 @@ if os.path.exists(base_output_dir):
 
 os.makedirs(base_output_dir, exist_ok=True)
 
-# 1. Extract the May 1991 solar storm period for validation # Start date of the solar storm period
+# 1. Extract the February 1991 geomagnetic storm interval for independent out-of-distribution evaluation.
 val_mask = (filtered_df.index >= storm_validation_start) & (filtered_df.index < storm_validation_end)
 val_df = filtered_df.loc[val_mask].copy()
 remaining_df = filtered_df.loc[~val_mask].copy()
-del filtered_df  # Free up memory
+del filtered_df
 
-print(f"Extracted {len(val_df)} rows for validation (May 1991 solar storm period)")
+val_df['block_id'] = -1  # Designates the held-out geomagnetic storm evaluation block.
+print(f"Extracted {len(val_df)} rows for validation (February 1991 geomagnetic storm interval)")
 
-# 2. Split remaining data to get test set (50,000 rows)
-train_df, test_df = train_test_split(remaining_df, test_size=test_normal_size, random_state=42)
+# 2. Partition non-storm telemetry into contiguous evaluation blocks of equal size.
+print(f"\nPartitioning non-storm data into contiguous blocks of equal size ({block_size} samples each)...")
+remaining_df.sort_index(inplace=True)
+total_samples = len(remaining_df)
+num_blocks = total_samples // block_size
+truncated_len = num_blocks * block_size
+
+df_blocked = remaining_df.iloc[:truncated_len].copy()
 del remaining_df  # Free up memory
 
-print(f"Split remaining data into {len(train_df)} training rows and {len(test_df)} test rows")
+# Assign contiguous block IDs (0, 1, 2, ..., num_blocks - 1)
+df_blocked['block_id'] = np.repeat(np.arange(num_blocks), block_size)
+
+# Select test blocks using a reproducible pseudo-random seed while guaranteeing non-adjacency.
+rng = np.random.RandomState(42)
+available_blocks = list(range(2, num_blocks - 2))
+perm = rng.permutation(available_blocks)
+selected_set = set()
+selected_test_blocks = []
+for block_index in perm:
+    if (block_index - 1) not in selected_set and (block_index + 1) not in selected_set:
+        selected_set.add(block_index)
+        selected_test_blocks.append(block_index)
+        if len(selected_test_blocks) == num_test_blocks:
+            break
+
+selected_test_blocks = set(selected_test_blocks)
+
+# Withhold adjacent guard band blocks to eliminate boundary autocorrelation leakage.
+guard_band_blocks = set()
+for test_block_index in selected_test_blocks:
+    guard_band_blocks.add(test_block_index - 1)
+    guard_band_blocks.add(test_block_index + 1)
+
+print(f"Selected {len(selected_test_blocks)} contiguous test blocks of size {block_size} "
+      f"({len(selected_test_blocks) * block_size} total test samples, {len(selected_test_blocks) * block_size / total_samples * 100:.2f}% of non-storm data).")
+print(f"Withheld {len(guard_band_blocks)} boundary guard band blocks to enforce temporal isolation.")
+
+test_mask = df_blocked['block_id'].isin(selected_test_blocks)
+train_mask = ~df_blocked['block_id'].isin(selected_test_blocks | guard_band_blocks)
+
+test_df = df_blocked[test_mask].copy()
+train_df = df_blocked[train_mask].copy()
+del df_blocked
+
+print(f"Split remaining data into {len(train_df)} training rows and {len(test_df)} test rows (across {len(selected_test_blocks)} contiguous blocks of size {block_size}).")
 
 # Function to save dataset
 def save_dataset(df, name, output_dir):

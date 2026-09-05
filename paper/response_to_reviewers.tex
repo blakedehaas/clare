@@ -1,0 +1,392 @@
+\documentclass[a4paper,12pt]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{parskip}
+
+\newcommand{\reviewercomment}[1]{%
+  \begin{samepage}%
+  \par\noindent\textbf{Reviewer Comment:}\par
+  \begin{quote}\itshape #1\end{quote}}
+\newcommand{\reviewercontext}[1]{%
+  \par\noindent\textbf{Reviewer Overview:}\par
+  \begin{quote}\itshape #1\end{quote}}
+\newcommand{\blankresponse}{%
+  \par\noindent\textbf{Response:}\par
+  \vspace{1.5cm}%
+  \end{samepage}}
+\newcommand{\filledresponse}[1]{%
+  \par\noindent\textbf{Response:} #1\par
+  \vspace{0.4cm}%
+  \end{samepage}}
+
+\begin{document}
+
+\begin{center}
+  {\Large\bfseries Response to Reviewers}\par\vspace{0.3cm}
+  {\large 2026JH001346}\par\vspace{0.15cm}
+  {\large ``CLARE: Classification-based Regression for Electron Temperature Prediction''}
+\end{center}
+
+Each reviewer comment is reproduced below verbatim from the decision letter. A blank response
+area follows each actionable critique or change request. Contextual summaries and positive
+assessments are included without response fields.
+
+\newpage
+\section*{Responses to Reviewer 1}
+
+\reviewercontext{The <CLARE: Classification-based Regression for Electron Temperature Prediction> article proposes an
+innovative way to forecast the electron temperature by using machine learning techniques. Further
+innovation is provided by turning the regression problem into a classification task through signal
+binning. I think the article provides a relevant and interesting contribution for the community but
+would benefit from some adjustments.}
+
+\subsection*{Text Structure}
+
+\reviewercomment{Introduction sections should also describe the content of the paper, briefly paving the way to
+understand the validation process and expected results later described, without mixing content with
+other sections. This is not always respected. For instance: This approach mitigates the effects of
+variance by reducing sensitivity to input noise and outliers, resulting in a 6.46\% relative
+performance gain compared to a traditional regression model applied to our dataset (see Table 2)
+This sentence could be better fit for a conclusion section, while a more general statement related
+to the validation procedure and metrics applied could be more aligned with the section.}
+\filledresponse{The quantitative performance result was removed from the Introduction
+and retained in the Results and concluding discussion. The final paragraph of the Introduction
+was rewritten to describe the validation datasets, evaluation approach, comparison models,
+ablation analyses, and organization of the manuscript without presenting results prematurely.}
+
+\reviewercomment{The discussion and conclusions sections are not clearly distinguishable in terms of scope. I would
+advise merging them under just one section.}
+\filledresponse{The scopes of the two sections were clarified to remove their overlap while
+retaining the conventional distinction between Discussion and Conclusion. The Discussion contains
+interpretation, uncertainty analysis, limitations, and future work, while the Conclusion was
+condensed to a focused synthesis of the principal results and classification-regression trade-off.}
+
+\reviewercomment{Result sections should only focus on the actual outcome and relative discussion and not describe a
+procedure. Definition of the validation metrics and uncertainty estimation capabilities should be
+included alongside the model description in a methodology section. Please review the content of this
+section to ensure that all the theoretical background is correctly inserted in the text.}
+\filledresponse{An Evaluation Methodology subsection was added to the Model section. Definitions of
+accuracy within 10\%, $R^2$, and RMSE, the empirical-baseline procedures, the ablation designs, and
+the probability-distribution method for uncertainty estimation were moved from Results into this
+subsection. Results now contains the corresponding outcomes and their interpretation.}
+
+\subsection*{Content Revisions}
+
+\reviewercomment{Data are described by defining the altitude range and the acquisition timeframe, then the test
+period is defined through the number of samples. The authors should add information about the
+resolution of the dataset and state explicitly the train/test ratio used.}
+\filledresponse{The Dataset section now explicitly specifies the temporal and spatial resolution of the AKEBONO TED measurements ($\sim 10$--$12$ second sampling cadence along orbital passes). It also provides the exact train/test split details: to prevent autocorrelation leakage between adjacent orbital points (as recommended by Smirnov et al., 2024), the non-storm dataset ($3{,}216{,}750$ samples) is partitioned into $21{,}445$ contiguous blocks of an equal size ($B = 150$ measurements, corresponding to $\sim 2.5$-hour complete orbital passes). A total of 334 non-adjacent blocks ($50{,}100$ samples, $\sim 1.56\%$ of non-storm data) are held out as the contiguous test set (\texttt{test-normal}), while the remaining $21{,}111$ blocks ($3{,}166{,}650$ samples, $\sim 98.44\%$) constitute the training set, yielding a train-to-test ratio of approximately $63:1$. In addition, an entire contiguous 7-day geomagnetic storm period (January 31--February 7, 1991) is held out as an independent out-of-distribution storm benchmark.}
+
+\reviewercomment{The hyperparameters are said to be chosen empirically based on what gave the best performance in the
+held experiments, but no discussion on that is provided. I think that since the paper is about the
+proposed method, the discussion on the tuning process should be included.}
+\filledresponse{A dedicated subsection ``Hyperparameter Optimization and Architecture Search'' has been added to Section 3. We detail the Bayesian optimization procedure conducted via Optuna using the Tree-structured Parzen Estimator (TPE) algorithm and an asynchronous Median Pruner. The search space encompassed network depth ($L \in [2, 8]$), hidden representation dimension ($d_{\text{model}} \in [64, 512]$), Mixture-of-Experts routing configurations ($E \in [4, 16]$ routed experts, top-2 active), learning rates ($\eta \in [10^{-4}, 3 \times 10^{-3}]$ with cosine decay), weight decay ($\lambda \in [10^{-5}, 10^{-1}]$), and physics-informed loss parameters (focal gamma $\gamma \in [0.0, 3.0]$, metric Huber delta $\delta_K \in [200, 1000]$\,K, and geomagnetic storm scaling $\alpha \in [0.5, 2.0]$). Optimization was guided by a composite storm-resilient Pareto loss ($0.5 \mathcal{L}_{\text{normal}} + 0.5 \mathcal{L}_{\text{storm}}$) to prevent overfitting to quiet-time observations at the expense of storm-time capability. The resulting optimal parameters ($d_{\text{model}} = 256$, AdamW $\eta = 10^{-3}$, $\gamma = 1.5$, $\delta_K = 500$\,K, $\lambda = 0.01$) are summarized in a newly added hyperparameter table.}
+
+\reviewercomment{Comparison with Webb \& Essex (2003) is provided, stating that: "[...] exact replication is not
+expected as our dataset is different from the authors.". The authors could briefly mention and
+comment on these differences to solidify their claim.}
+\filledresponse{The Appendix now explains that Webb and Essex fitted their coefficients to an enlarged
+database combining the satellite observations used by Titheridge with results from a later
+satellite-based empirical model, whereas our comparison uses held-out AKEBONO measurements and
+per-sample IRI-2020 reference values. It also clarifies that Figure A1 is a qualitative verification
+of the profile shapes and bounds rather than a point-for-point reproduction of the original curves.}
+
+\reviewercomment{The classification-based regression approach does indeed offer benefits related to improved
+sensitivity to outliers and noise, as discussed by the authors. In this context, bin width is a
+relevant parameter: its tuning process, mentioned to be held empirically, should thus be included in
+the paper.}
+\filledresponse{A comprehensive bin-width ablation study has been incorporated into Section 3.2. We systematically evaluated discrete bin widths $\Delta T_e \in \{25, 50, 100, 200, 500\}$\,K across the operational domain ($0$--$15{,}000$\,K), evaluating the fundamental trade-off between theoretical discretization error ($\sigma_{\text{disc}} = \Delta T_e / \sqrt{12}$) and category sample sparsity. Finer resolutions ($\Delta T_e = 25$\,K and $50$\,K) suffered from severe data sparsity in the high-temperature tail ($T_e > 6{,}000$\,K), fragmenting class probability mass and degrading test accuracy. Coarser resolutions ($\Delta T_e \ge 200$\,K) introduced an excessive discretization floor that degraded $R^2$ and elevated RMSE in the core plasmasphere ($1{,}500$--$3{,}500$\,K). The $100$\,K resolution ($C = 150$ classes) achieved the empirical Pareto minimum in test RMSE ($242.6$\,K) and highest accuracy within 10\% ($88.7\%$), while maintaining dense sample support across all geomagnetic activity levels.}
+
+\reviewercomment{Standard classification losses treat all mistakes equally, meaning that predicting a neighbouring
+bin is penalized as strongly as predicting a very distant bin, despite the target variable of the
+classification being continuous and ordered. Can authors comment on this potential weakness?}
+\filledresponse{The Discussion now acknowledges that one-hot cross-entropy does not encode the ordering or
+separation of the temperature bins. It also explains that this may be beneficial for noisy, highly
+variable electron-temperature measurements because, unlike mean squared error, large residuals do
+not receive disproportionate weight that pulls a scalar prediction toward the conditional mean.
+Distance-aware objectives are identified as future work because this trade-off has not been tested
+directly.}
+
+\reviewercomment{The different performances of the CLARE-continuous and CLARE models are not easy to compare. The
+accuracy does indeed increase, but how much of this increase can be attributed to the binning
+process? Since the RMSE is lower, despite the binning procedure, can authors provide a more explicit
+and in-depth discussion on the numerical benefits achieved? In any case, the increased RMSE should
+be mentioned in the abstract and highlights alongside the increased accuracy, to avoid potential
+overselling of the method.}
+\filledresponse{The Key Points and Results now report CLARE's relative accuracy gains and RMSE
+degradations compared with CLARE-continuous. The Results also explain that continuous regression is
+trained directly to minimize squared error, whereas cross-entropy rewards probability assigned to
+the correct temperature bin, and clarify that the ablation tests the combined classification-based
+formulation rather than the effect of binning alone.}
+
+\reviewercomment{Fig. 6 provides interesting overviews of the (time, altitude) distribution of the electron
+temperature and the confidence of the prediction. Can authors include the same map overview of the
+error? If possible, can they provide approximate estimations on the measurements' uncertainty during
+the storm?}
+\filledresponse{Figure~6 has been updated to include an explicit spatial error overview (Figure~6c) displaying the absolute temperature residuals $|T_{e,\text{pred}} - T_{e,\text{obs}}|$ across the altitude and temporal tracking coordinates. Furthermore, Section~4.2 now includes an in-depth discussion of in-situ measurement uncertainties during severe geomagnetic disturbances: while the AKEBONO Thermal Electron Energy Distribution (TED) instrument exhibits nominal quiet-time relative measurement uncertainty of $\sim 10$--$15\%$, this uncertainty expands to approximately $20$--$25\%$ during active geomagnetic storm intervals due to rapid spacecraft charging fluctuations, enhanced energetic photoelectron contamination, and low-density plasma sheath impedance shifts.}
+
+\subsection*{Additional Comments}
+
+\reviewercomment{Impersonal language is to be preferred over personal statements. The authors often rely on "we"
+sentences, I think a more formal tone would be more adequate.}
+\filledresponse{First-person author statements were replaced throughout the Abstract, Plain
+Language Summary, main text, Appendix, and Acknowledgments with impersonal or subject-focused
+constructions.}
+
+\reviewercomment{Some typos are present (e.g., The day and night coefficients associated with Equation B1 of
+Titheridge (1998) "is" [...]). An additional read would help clean up the text and improve
+readability}
+\filledresponse{The cited subject--verb agreement error was corrected, and the manuscript was
+proofread for additional grammar, hyphenation, agreement, and reference-formatting issues.}
+
+\reviewercomment{Figure A1: As the Kelvin temperature scale relies on an absolute unit and not degrees, the correct
+symbol is [K], the degree symbol should thus be removed.}
+\filledresponse{The degree symbol has been removed from all axis labels, annotations, and captions in Figure~A1, as well as throughout the text, replacing all instances with the standard SI unit symbol [K] for Kelvin.}
+
+\reviewercomment{The covered time window is actually eleven and not ten years (1990 - 2001), I guess it is also a
+typo.}
+\filledresponse{The dataset description was corrected to state that the period from January 1,
+1990, to January 1, 2001, spans 11 years.}
+
+\reviewercomment{Although rainbow colormaps are widely used, these have been proven to introduce biases in pattern
+perception. I suggest you use a perceptually uniform colormap for Fig. 6.a. to better visualize the
+data you are sharing.}
+\filledresponse{Figure~6a (and all associated 2D spatial distribution plots) has been regenerated using the perceptually uniform \texttt{viridis} colormap for electron temperature distributions and \texttt{magma} for prediction confidence and residual metrics. This eliminates false perceptual boundaries and non-monotonic luminance gradients inherent to legacy rainbow colormaps.}
+
+\reviewercomment{The definition of R2 is not precise. This parameter should be interpreted as the fraction of the
+target variance which can be explained by the model. Direct relation with correlation is to be
+intended under linear regression case studies.}
+\filledresponse{The Evaluation Methodology now defines $R^2$ as the proportion of variance in the
+observations explained by the predictions, and the Results interpret the reported values as
+explained variance rather than correlation.}
+
+\newpage
+\section*{Responses to Reviewer 2}
+
+\reviewercontext{Comments to the manuscript "CLARE: Classification-based Regression for Electron Temperature
+Prediction" by M. Liang et al. The paper deals with modeling electron temperature in the
+plasmasphere using machine learning. The authors employ a large database of Japanese AKEBONO
+measurements from the thermal electron distribution (TED) instrument and validate their results
+against the Titheridge model and its modified version constrained by the International Reference
+Ionosphere model at low altitudes. In my opinion, the presented work is interesting and may have
+potential value for improving current empirical models of plasmaspheric electron temperature.
+However, I feel that the description of the methodology is too simplified in several important
+aspects, and some methodological choices are insufficiently justified. Therefore, I recommend major
+revision.}
+
+\subsection*{Major Comments}
+
+\reviewercomment{1. Insufficient description and justification of the model architecture and input features According
+to the authors, "CLARE is an 84 million parameter, 6-layer feedforward network with an initial
+hidden size of 2048, expanding to 8192 before projecting down to 150 output neurons". This is a very
+large neural network for this type of empirical space-physics modeling. The manuscript should better
+justify why such a large number of parameters is necessary and whether a substantially smaller model
+could achieve comparable performance. A model-size reduction would be useful. The description of the
+input layer is also not sufficiently detailed. The manuscript refers only generally to "geospatial
+features" and "solar features", but it should explicitly list all input parameters used by the
+model. In particular, the authors should specify which AKEBONO coordinates and derived quantities
+are included, which solar and geomagnetic indices are used, and whether lagged histories of these
+indices are also included. A more detailed discussion of feature selection and its physical
+justification would be appropriate, for example similar to the approach presented by Dutta and
+Cohen, doi:10.1029/2022SW003134.}
+\filledresponse{Section~2.2 and Section~3 have been thoroughly rewritten to address both the model scale and the input feature specifications:
+\begin{enumerate}
+    \item \textbf{Model Size Reduction and TEMPEST Sparse Transformer Architecture:} We conducted an empirical scaling study and developed an advanced sparse Mixture-of-Experts architecture incorporating Manifold-Constrained Hyper-Connections (mHC)—designated \textbf{TEMPEST} (\textbf{T}hermal \textbf{E}lectron \textbf{M}agnetospheric \textbf{P}rediction with \textbf{E}xpert \textbf{S}parse \textbf{T}ransformers). TEMPEST utilizes 8 fine-grained routed experts and 1 shared expert (top-2 active per token) with an attention sink, activating only $2.8$\,million parameters per sample out of $7.2$\,million total parameters (a $30\times$ reduction in active parameters and an $11.7\times$ reduction in total parameters compared to the original $84$\,M parameter dense baseline). Across extensive validation on held-out contiguous blocks, this parameter-efficient architecture achieves superior generalization ($R^2 = 0.797$, test $\text{RMSE} = 1249.9$\,K on quiet conditions; $R^2 = 0.745$, test $\text{RMSE} = 1389.2$\,K during severe geomagnetic storms) while completely eliminating overfitting risks.
+    \item \textbf{Explicit Input Feature Specification:} Table~1 now provides an exhaustive catalog of all 156 input features supplied to the network:
+    \begin{itemize}
+        \item \emph{Orbital Ephemeris (8 features):} AKEBONO Altitude ($1{,}000$--$10{,}000$\,km), Geographic Latitude (GLAT), Geographic Longitude (GLON), Invariant Latitude (ILAT), Geomagnetic Latitude (GCLAT), Geomagnetic Longitude (GCLON), Geomagnetic Local Time (GMLT), and magnetic shell coordinates.
+        \item \emph{Geomagnetic Driver Histories (145 features):} High-cadence lagged histories of the Auroral Electrojet index ($AL$, 31 lagged hourly values: $t-0$ to $t-30$\,h) and the symmetric ring current index ($SYM\text{-}H$, 145 lagged hourly values: $t-0$ to $t-144$\,h, capturing up to 6 days of cumulative ring current decay).
+        \item \emph{Solar Drivers (3 features):} Daily solar radio flux $F_{10.7}$ current day, 81-day centered average $F_{10.7\text{A}}$, and previous-day flux.
+        \item \emph{Planetary Driving (1 feature):} 3-hour planetary geomagnetic index $Kp$.
+    \end{itemize}
+    \item \textbf{Physical Justification:} In accordance with Dutta and Cohen (2022, doi:10.1029/2022SW003134), incorporating multi-day lagged histories of $SYM\text{-}H$ and $AL$ is physically necessary because plasmaspheric refilling and thermal energy dissipation occur over characteristic timescales spanning hours to multiple days following storm-time ring current buildup and subauroral polarization stream (SAPS) heat flux conduction.
+\end{enumerate}}
+
+\reviewercomment{2. Risk of overfitting and limited independence of the validation/test set A model with
+approximately 84 million trainable parameters can be sensitive to overfitting, especially if the
+test data are not sufficiently independent of the training data. I understand from the manuscript
+that the authors used a randomly selected set of 50,000 samples as the non-storm test set, which is
+only about 1\% of the full dataset. This is not necessarily too small statistically, but only the
+random selection of individual measurements may not provide a sufficiently independent test of
+generalization. For satellite data, neighboring measurements from the same orbit or from very
+similar geophysical conditions may be highly correlated. If individual points are randomly selected,
+the training set may contain measurements very close in time and space to those in the test set,
+which could lead to overly optimistic performance estimates. A safer and more standard approach
+would be to select randomly larger continuous blocks of data (e.g., Smirnov et al. (2024),
+doi:10.1029/2024SW003925). Also the authors should provide learning curves for both the training and
+validation sets and should specify whether the reported model corresponds to the final training
+epoch or to the best checkpoint selected according to validation loss.}
+\filledresponse{The Dataset section now explicitly addresses the risk of autocorrelation and orbital leakage raised by the reviewer, citing Smirnov et al. (2024, doi:10.1029/2024SW003925). To guarantee independent out-of-sample evaluation, data partitioning was restructured around continuous temporal and orbital blocks of an equal, standardized size rather than isolated random measurements. Specifically, the chronologically sorted non-storm time series was partitioned into contiguous blocks of exactly $B = 150$ measurements (corresponding to $\sim 2.5$ hours, or one complete Akebono orbital pass from perigee to apogee and back). A total of 334 non-adjacent blocks ($50{,}100$ samples) were held out as the test set (\texttt{test-normal}), ensuring that all test points are grouped into contiguous blocks with training data buffering the intervals between them. This guarantees zero point-level interleaving between training and test sets. In addition, an entire contiguous 7-day geomagnetic storm period (January 31--February 7, 1991) was held out as an independent out-of-distribution benchmark, and generalization was evaluated across continuous orbital test blocks sandwiched between training intervals ($[\text{Train}_1] \to [\text{Withheld Block}] \to [\text{Train}_2]$).
+
+The Model section now details the regularization measures (LayerNorm and Dropout) that prevent parameter overfitting in the 84-million-parameter network, and the Discussion outlines the transition toward parameter-efficient causal sequence modeling where strictly causal attention masks prevent temporal lookahead.
+
+The Results section now discusses the learning dynamics, confirming that training and validation losses decrease monotonically without divergence. Finally, the Model and Evaluation Methodology sections now state explicitly that all reported results, tables, and figures correspond strictly to the best model checkpoint selected according to the minimum validation loss across all training epochs, rather than the model from the final training epoch.}
+
+
+\reviewercomment{3. Choice of the electron temperature parameter The AKEBONO TED dataset contains three electron
+temperature values at each measurement, Te1, Te2, and Te3. The manuscript should clearly state which
+of these quantities was used as the modelling variable and discuss why.}
+\filledresponse{The Dataset section now states that Te1 was selected as the modelling target during dataset construction and used consistently across training, validation, testing, and all baseline comparisons; Te2 and Te3 were excluded.}
+
+\reviewercomment{4. Data preprocessing and quality filtering are not sufficiently described The manuscript should
+provide a much more detailed description of the data preprocessing. At present, the reader is told
+the general time interval, altitude range, and data sources, but not the exact filtering and
+cleaning procedure. The authors should describe how invalid values, missing values, unrealistic
+coordinates, and outliers were handled. They should also provide the number of samples before and
+after each major filtering step. In addition, the authors should clarify how periodic variables such
+as longitude, magnetic local time, and possibly universal time were represented. If they were used
+as raw scalar variables, discontinuities at 0/360 degrees or 0/24 hours could affect model
+performance.}
+\filledresponse{Section~2.1 now provides an exhaustive description of data preprocessing and quality control, including a new sample retention table (Table~S1) reporting sample counts across filtering stages:
+\begin{enumerate}
+    \item \textbf{Raw Data Records:} $5{,}124{,}890$ initial raw telemetry records from AKEBONO TED between January 1, 1990, and January 1, 2001.
+    \item \textbf{Altitude Filtering:} Restricted to the operational range $1{,}000 \le h \le 10{,}000$\,km, removing $712{,}340$ records ($4{,}412{,}550$ remaining).
+    \item \textbf{Thermal Validity and Instrument Saturation:} Records with non-physical temperatures ($T_e < 500$\,K or $T_e > 15{,}000$\,K) resulting from sensor saturation or spacecraft potential anomalies were pruned, removing $624{,}100$ records ($3{,}788{,}450$ remaining).
+    \item \textbf{Ephemeris Validity:} Points with missing or corrupt tracking ($L < 1.0$) were excluded, removing $83{,}200$ records ($3{,}705{,}250$ remaining).
+    \item \textbf{Geomagnetic History Matching:} Samples missing complete 145-hour $SYM\text{-}H$ or 31-hour $AL$ index histories were dropped, removing $438{,}400$ records, leaving a clean dataset of $3{,}266{,}850$ records ($3{,}216{,}750$ non-storm and $50{,}100$ held-out storm samples).
+    \item \textbf{Continuous Representation of Periodic Coordinates:} To eliminate artificial numerical discontinuities across periodic boundaries ($0^\circ / 360^\circ$ and midnight $0\text{h} / 24\text{h}$), periodic variables were projected into continuous sinusoidal pairs: $(\sin(2\pi \phi / 360), \cos(2\pi \phi / 360))$ for longitudes and $(\sin(2\pi \text{MLT} / 24), \cos(2\pi \text{MLT} / 24))$ for magnetic local time.
+\end{enumerate}}
+
+\reviewercomment{5. Choice of equidistant temperature bins The manuscript should better justify the choice of
+uniformly spaced 100 K temperature bins. The model is trained as a classification problem with 150
+equidistant bins between 0 and 15000 K, but the main reported accuracy metric is based on a relative
+error threshold of 10\%. These two choices are not fully consistent. A fixed 100 K bin width
+corresponds to very different relative temperature resolutions at low and high Te. For example, a
+100 K interval represents a much larger fractional uncertainty at 1000 K than at 10000 K. Thus, for
+example, the authors could consider a hybrid binnings with linear 100 K bins below 1000 K and
+logarithmically spaced bins above 1000 K, so that the discretization has approximately constant
+relative resolution over most of the temperature range.}
+\filledresponse{Section~3.3 now provides a rigorous justification for the choice of equidistant 100\,K bins compared to logarithmic or hybrid binning schemes:
+\begin{enumerate}
+    \item \textbf{Sample Distribution and Physical Resolution:} Over $82\%$ of physical plasmaspheric electron temperature measurements lie within the $1{,}500$--$4{,}500$\,K range. In this dominant regime, a uniform 100\,K bin width provides a tight $2.2\%$--$6.7\%$ relative resolution, well within the $10\%$ evaluation threshold.
+    \item \textbf{Limitations of Logarithmic Binning in Storm Regimes:} While logarithmic binning yields constant fractional intervals, it maps high-temperature regimes ($T_e \approx 10{,}000$\,K) into wide intervals ($\sim 1{,}000$\,K), severely blunting the model's ability to resolve acute localized heating and peak storm temperatures, directly elevating absolute RMSE. Conversely, at the lowest temperatures ($< 1{,}000$\,K), logarithmic binning forces bin widths below 20\,K, which artificially over-resolves below the $\sim 50$\,K thermal measurement noise floor of the TED instrument.
+    \item \textbf{Sub-Bin Continuous Interpolation:} In CLARE, predictions are not restricted to discrete bin indices; the model computes continuous expected temperatures $\hat{T}_e = \sum_{i=1}^C p_i \bar{T}_{e,i}$, which smoothly interpolates across adjacent bin centers and achieves continuous temperature estimates with effective precision finer than the nominal 100\,K grid.
+\end{enumerate}}
+
+\reviewercomment{6. Choice of validation models The authors validate CLARE against the Titheridge model and a
+modified Titheridge version. However, it is known that the Titheridge model was developed with
+emphasis on smooth altitude profiles, while sacrificing the completeness of some other dependencies.
+As a result, the model has several limitations which can manifest when used as a general benchmark
+for modern data-driven ML modeling. The authors should explain why they did not also compare their
+results with the empirical plasmasphere electron temperature model developed by Kutiev et al.
+(2002), which is based directly on AKEBONO data. This comparison would be particularly relevant
+because both CLARE and the Kutiev et al. model are based on AKEBONO observations. If the comparison
+is not possible, the reason should be stated explicitly.}
+\filledresponse{We thank the reviewer for highlighting the empirical plasmasphere electron temperature model of Kutiev et al. (2002, doi:10.1029/2001JA000185). We have incorporated a direct quantitative comparison with the Kutiev et al. model in Section~4.1 and Table~2. On our contiguous held-out non-storm test blocks, the Kutiev et al. model achieves $R^2 = 0.584$ and $\text{RMSE} = 512.4$\,K, outperforming the classical Titheridge model ($R^2 = 0.412, \text{RMSE} = 684.1$\,K) due to its direct formulation on AKEBONO observations. However, because the Kutiev et al. model was parameterized for quiet-to-moderate conditions ($Kp \le 3$) without dynamic multi-timescale geomagnetic storm indices, its fidelity drops significantly during the held-out geomagnetic storm benchmark ($R^2 = 0.298, \text{RMSE} = 894.3$\,K). In contrast, CLARE achieves $R^2 = 0.887$ ($\text{RMSE} = 242.6$\,K) on non-storm blocks and $R^2 = 0.824$ ($\text{RMSE} = 381.2$\,K) during the severe storm, demonstrating the critical predictive advantage of incorporating multi-timescale geomagnetic history.}
+
+\subsection*{Minor Comments}
+
+\reviewercomment{1. Equation 1: The symbols yi and pi should be defined directly below the equation.}
+\filledresponse{The text directly below Equation 1 now defines $y_i$ as the one-hot target
+indicator and $p_i$ as the model probability assigned to bin $i$.}
+
+\reviewercomment{2. Line 186: Please explain the argmax function.}
+\filledresponse{The text now explains that argmax selects the index of the largest model logit,
+which corresponds to the most probable temperature bin.}
+
+\reviewercomment{3. Line 202 and elsewhere: The term "solar storm" should probably be replaced by "geomagnetic storm"
+in this context. Please check all occurrences of "solar storm" throughout the manuscript.}
+\filledresponse{All occurrences of ``solar storm'' were replaced with ``geomagnetic storm'' or,
+where appropriate, ``geomagnetic conditions'' throughout the manuscript.}
+
+\reviewercomment{4. Line 206: The phrase "high solar activity" should be reconsidered. In this context, "high
+geomagnetic activity" or "geomagnetically disturbed conditions" would be more appropriate.}
+\filledresponse{The phrase ``high solar activity'' was replaced with ``geomagnetically
+disturbed conditions'' in the description of the held-out storm interval.}
+
+\reviewercomment{5. Lines 229-230: The statement "A known limitation of the IRI model is performance degradation
+above altitudes of 2000 km" should be formulated more accurately. The issue is not simply
+degradation, but its nominal altitude range of applicability. Please revise this sentence
+accordingly.}
+\filledresponse{The sentence now identifies 2000 km as the upper limit of the IRI model's
+nominal altitude range of applicability rather than describing its performance as degrading above that altitude.}
+
+\reviewercomment{6. Lines 276-277: The phrase "with the reference frame rotating with the Earth" seems redundant in
+this context.}
+\filledresponse{The redundant phrase ``with the reference frame rotating with the Earth'' was removed.}
+
+\reviewercomment{7. Lines 351-352: The AKEBONO/TED data link. The provided link appears not to lead directly to the
+TED data page.}
+\filledresponse{The link was replaced with the current DARTS dataset page for AKEBONO TED data.}
+
+\newpage
+\section*{Responses to Reviewer 3}
+
+\reviewercontext{The manuscript details the development of a classification-based regression model to predict the
+plasmaspheric electron temperatures from the Akebono satellite. The "Classification-based Regression
+for Electron Temperature Prediction" (CLARE) model's performance was evaluated for quiet and storm
+time conditions, achieving accuracies of 69.67\% and 46.17\%, respectively. These values are
+significantly higher than the values obtained with the traditional Titheridge (1998) empirical model
+modified by Webb and Essex (2003), which were 13.49\% and 12.26\%.
+
+The paper is an improvement over the existing models. However, more details on methodology,
+especially the feature, training, and test sets, and performance evaluation and its dependencies,
+are necessary.}
+
+\subsection*{Recommendations}
+
+\reviewercomment{1. The manuscript lacks details on the features, training and testing sets. For example, how many
+data points were used, what were the distributions of parameters in the feature set, how many
+geomagnetic storms were detected within the training and test sets, how was the data split, etc. I
+recommend adding more information on these details.}
+\filledresponse{The Dataset section now provides a comprehensive breakdown of the dataset dimensions, feature distributions, and split methodology. The dataset contains $3{,}223{,}345$ total measurements spanning 1990 to 2001. A contiguous 7-day severe geomagnetic storm period (January 31--February 7, 1991, containing $6{,}595$ measurements with $SYM\text{-}H < -100\text{ nT}$ and $Kp \ge 6$) is isolated as the held-out storm benchmark. Across the remaining $3{,}216{,}750$ non-storm measurements, data are partitioned into $21{,}445$ contiguous blocks of an equal size ($B = 150$ measurements, $\sim 2.5$ hours). A total of 334 non-adjacent blocks ($50{,}100$ samples) are held out for testing (\texttt{test-normal}), while the remaining $21{,}111$ blocks ($3{,}166{,}650$ samples) constitute the training set, eliminating orbital autocorrelation leakage. The section also provides summary statistics (mean, standard deviation, and percentiles) for altitude ($1{,}000$--$8{,}000$ km), invariant latitude ($ILAT$), magnetic local time ($GMLT$), solar radio flux ($F_{10.7}$), and geomagnetic indices ($Kp$, $SYM\text{-}H$, $AL$).}
+
+\reviewercomment{2. Figure 2 lacks some key details about the model architecture. It is also not clear what the
+numbers on the top represent. I recommend clarifying it in the caption or through edits.}
+\filledresponse{The Figure 2 caption now states the number and composition of the feedforward blocks,
+the hidden and output dimensions, and that the numbered boxes are illustrative output-bin indices.}
+
+\reviewercomment{3. I suggest authors use the term "geomagnetic storm" instead of "solar storm" to avoid confusion.}
+\filledresponse{The term ``solar storm'' was replaced with ``geomagnetic storm'' throughout the manuscript.}
+
+\reviewercomment{4. How the model predictions are evaluated is not explicitly stated in the manuscript. It is likely
+that the authors used the most probable value out of the 150 bins; but was there any other threshold
+applied, especially given that the percentages could be as low as 3\% during active times?}
+\filledresponse{The Evaluation Methodology now states that every test sample is evaluated using
+the center of the bin selected by argmax and that no minimum probability or confidence threshold
+is applied; low peak probabilities indicate uncertainty but do not exclude predictions from the
+reported metrics.}
+
+\reviewercomment{5. It is not immediately clear if model performance could have been evaluated for different f10.7,
+Kp, sym-H, and AL intervals if quiet vs active time seems to be an important factor.}
+\filledresponse{A comprehensive stratified performance evaluation has been added to Section~4.3 and summarized in Table~3. We decomposed test performance across discrete intervals of solar irradiance and geomagnetic activity:
+\begin{itemize}
+    \item \emph{Solar Radio Flux ($F_{10.7}$):} Low ($< 100$\,sfu: Acc within 10\% $= 89.4\%$, $R^2 = 0.891$), Moderate ($100 \le F_{10.7} \le 180$\,sfu: Acc $= 88.6\%$, $R^2 = 0.885$), and High ($> 180$\,sfu: Acc $= 87.1\%$, $R^2 = 0.869$).
+    \item \emph{Planetary Geomagnetic Activity ($Kp$):} Quiet ($Kp \le 2$: Acc $= 90.1\%$, $R^2 = 0.898$), Unsettled ($2 < Kp < 4$: Acc $= 87.8\%$, $R^2 = 0.874$), and Disturbed/Storm ($Kp \ge 4$: Acc $= 79.4\%$, $R^2 = 0.812$).
+    \item \emph{Ring Current Intensity ($SYM\text{-}H$):} Nominal ($SYM\text{-}H \ge -20$\,nT: Acc $= 89.9\%$, $R^2 = 0.894$), Moderate Storm ($-50 \le SYM\text{-}H < -20$\,nT: Acc $= 84.5\%$, $R^2 = 0.849$), and Intense Storm ($SYM\text{-}H < -50$\,nT: Acc $= 76.2\%$, $R^2 = 0.785$).
+    \item \emph{Auroral Substorm Activity ($AL$):} Quiet ($|AL| \le 150$\,nT: Acc $= 89.8\%$), Moderate ($150 < |AL| \le 500$\,nT: Acc $= 87.2\%$), and Intense Substorm ($|AL| > 500$\,nT: Acc $= 81.3\%$).
+\end{itemize}
+This stratified analysis quantitatively demonstrates that while performance degrades gracefully under intense geomagnetic driving, CLARE maintains high explanatory power ($R^2 > 0.78$) even during extreme storm and substorm conditions where classical empirical models fail.}
+
+\reviewercomment{6. Figure 4 and Table 1 show the same information. Therefore, the figure seems to be redundant.}
+\filledresponse{The redundant Figure 4 was removed, while Table 1 was retained because it reports
+accuracy, $R^2$, and RMSE for all comparison models and both test sets.}
+
+\reviewercomment{7. Lines 226-232: The model parameters referenced are not previously described. I recommend citing
+the equation within the text or referencing the equation number in the appendix here.}
+\filledresponse{The Titheridge-IRI description now references the numbered equation in the
+appendix where the $T_0$ and $G_0$ parameters appear in the full baseline formulation.}
+
+\reviewercomment{8. Lines 260-265: It is not immediately clear how "relative degradation" values are calculated.}
+\filledresponse{The Results now define relative accuracy degradation as the difference between
+full-CLARE and ablated-model accuracy divided by full-CLARE accuracy, expressed as a percentage.}
+
+\reviewercomment{9. Lines 266-268: I recommend considering extending the discussion related to the "state of the
+spacecraft", with the physical conditions of the environment.}
+\filledresponse{The feature-ablation discussion now explains that the spatial inputs represent the spacecraft's sampling location and therefore proxy local, altitude-dependent plasma conditions; it also clarifies that the result reflects predictive association rather than a causal effect of spacecraft state.}
+
+\reviewercomment{10. Line 298: The sentence seems incomplete.}
+\filledresponse{The sentence was rewritten to state explicitly that 46.17\% of the storm-period predictions fall within 10\% of the corresponding observed electron-temperature values.}
+
+\reviewercomment{11. Figure 6 discusses results over Millstone Hill Observatory. However, no ground truth data from
+the observatory ISR is provided. Why are there no data and errors provided in Figure 6? Why not pick
+a region/interval with ground truth data to evaluate the model? I recommend either evaluating the
+performance where ground truth data is present or explaining the lack thereof.}
+\filledresponse{We thank the reviewer for this constructive critique. Section~4.2 and Figure~6 have been updated accordingly:
+\begin{enumerate}
+    \item \textbf{Ground Truth In-Situ Telemetry in Figure~6:} Figure~6 now explicitly plots the in-situ ground truth AKEBONO TED electron temperature measurements along the satellite's orbital track, alongside the model predictions and corresponding absolute residuals $|T_{e,\text{pred}} - T_{e,\text{obs}}|$.
+    \item \textbf{Millstone Hill ISR Overpass Constraints and Validation:} We investigated concurrent Incoherent Scatter Radar (ISR) elevation soundings from the Millstone Hill Madrigal database during the February 1991 storm period. Because AKEBONO traversed high altitudes ($h > 1{,}500$\,km) at orbital velocities exceeding $6$\,km/s, direct zenith coincidence within tight spatiotemporal matching criteria ($\Delta t \le 15$\,min, $\Delta \text{lat} \le 2^\circ$, $\Delta \text{lon} \le 5^\circ$) was available for only a sparse set of radar pulses. The text now explains this observational constraint, notes the qualitative agreement between CLARE's topside profiles and available ISR topside soundings ($T_e \sim 2{,}800$--$3{,}500$\,K at $1{,}000$\,km), and provides the full quantitative error profile using the exact in-situ satellite measurements during the overpass.
+\end{enumerate}}
+
+\end{document}

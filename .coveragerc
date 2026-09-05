@@ -1,0 +1,29 @@
+[run]
+branch = True
+source = .
+omit =
+    tests/*
+    archive/*
+    setup_env*
+    setup.py
+
+[report]
+show_missing = True
+skip_covered = False
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    raise AssertionError
+    raise NotImplementedError
+    if __name__ == .__main__.:
+    if self\.debug:
+    if args\.debug:
+    is_debug_step
+    except ImportError:
+    if not HAS_TORCH:
+    if not HAS_WANDB:
+    if not HAS_DATASETS:
+    if wandb\.run:
+    if log_to_wandb:
+    sys\.exit\(
+    pass

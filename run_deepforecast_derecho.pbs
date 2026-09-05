@@ -1,0 +1,49 @@
+#!/bin/bash
+#PBS -N deepforecast_v4
+#PBS -A UCUL0008
+#PBS -l select=1:ncpus=16:ngpus=1:mem=64GB
+#PBS -l walltime=12:00:00
+#PBS -q main
+#PBS -j oe
+#PBS -m abe
+#PBS -M blake.dehaas@lasp.colorado.edu
+
+# ==============================================================================
+# UCAR DERECHO HPC BATCH SCRIPT: DEEPSEEK-V4 SPACE WEATHER FORECASTING
+# Architecture: Manifold Hyper-Connections (mHC), DeepSeekMoE, CSA/HCA, Muon
+# ==============================================================================
+
+cd /glade/campaign/univ/ucul0008/auroral_precipitation_ml/clare
+
+echo "=== UCAR Derecho DeepForecast Execution ==="
+echo "Host: $(hostname)"
+echo "Job ID: $PBS_JOBID"
+echo "Date: $(date)"
+
+# Load NCAR environment modules
+module purge
+module load ncarenv/24.12
+module load conda
+module load cuda/12.8.0
+
+# Activate project environment
+source clare_venv/bin/activate
+echo "Python: $(which python)"
+
+# Display GPU resources allocated by PBS
+nvidia-smi
+
+export WANDB_MODE=online
+export OMP_NUM_THREADS=8
+
+# Execute High-Performance DeepSeek-V4 Training on NVIDIA H100 GPU
+python train_deepforecast.py \
+    --epochs 10 \
+    --batch_size 128 \
+    --d_model 256 \
+    --n_layers 6 \
+    --num_experts 8 \
+    --top_k 2 \
+    --lr 2e-4
+
+echo "DeepSeek-V4 Training completed successfully at: $(date)"

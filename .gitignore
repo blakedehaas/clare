@@ -1,8 +1,125 @@
-wandb/*
+# ==============================================================================
+# CLARE Space Physics ML Project - Best Practice .gitignore
+# Prevents uploading data, model artifacts, checkpoints, visualizations, and caches
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. Model Artifacts, Weights, and Checkpoints
+# ------------------------------------------------------------------------------
+checkpoints/*
+!checkpoints/norm_stats.json
+out/
+models_out/
 *.pth
+*.pt
+*.ckpt
+*.bin
+*.h5
+*.safetensors
+*.onnx
+
+# ------------------------------------------------------------------------------
+# 2. Visualizations, Plots, and Generated Figures
+# ------------------------------------------------------------------------------
+*.png
+*.jpg
+*.jpeg
+*.svg
+*.pdf
+tests/test_output/
+
+# ------------------------------------------------------------------------------
+# 3. Datasets, Telemetry, and Large Data Files
+# ------------------------------------------------------------------------------
+dataset/processed_dataset/
+dataset/processed_dataset_*
+dataset/archive/
+dataset/input_dataset/*
+!dataset/input_dataset/.gitignore
+data/
+raw_data/
+processed_data/
+train_chunks/
+test-normal/
+test-storm/
 *.tsv
-*.pyc
-dataset/processed_dataset/*
-dataset/processed_dataset_01_31_storm/*
-data/*
-archive/*
+*.csv
+*.parquet
+*.arrow
+*.feather
+*.lst
+*.dat
+
+# Compressed archives
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+*.gz
+*.bz2
+*.xz
+
+# ------------------------------------------------------------------------------
+# 4. Experiment Tracking, Databases, and Run Logs
+# ------------------------------------------------------------------------------
+wandb/
+mlruns/
+lightning_logs/
+*.db
+*.sqlite
+*.sqlite3
+*.log
+*.log.*
+
+# ------------------------------------------------------------------------------
+# 5. Python Bytecode, Caching, and Virtual Environments
+# ------------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+*venv/
+*_venv/
+
+# Pytest and coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ------------------------------------------------------------------------------
+# 6. IDE, Operating System, and Scratch Files
+# ------------------------------------------------------------------------------
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+scratch/
+tmp/
+temp/

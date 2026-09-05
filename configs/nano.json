@@ -1,0 +1,8 @@
+{
+  "model_name": "nano",
+  "n_layer": 3,
+  "n_head": 3,
+  "n_embd": 96,
+  "block_size": 256,
+  "vocab_size": 1024
+}
