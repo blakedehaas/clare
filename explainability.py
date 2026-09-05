@@ -314,3 +314,64 @@ def plot_waterfall(
         plt.savefig(save_path, dpi=300)
         print(f"Saved Waterfall Plot to {save_path}")
     return fig
+
+
+def plot_beeswarm_summary(
+    shap_values: np.ndarray,
+    feature_matrix: np.ndarray,
+    feature_names: List[str],
+    top_n: int = 15,
+    save_path: Optional[str] = None
+) -> plt.Figure:
+    """
+    Generates beeswarm summary plot showing distribution and directionality of feature attributions.
+    Horizontal axis: SHAP value in Kelvin.
+    Vertical axis: Top features ordered by mean absolute SHAP value.
+    Point color: Normalized feature value (low = blue, high = red).
+    """
+    mean_abs_shap = np.mean(np.abs(shap_values), axis=0)
+    sorted_idx = np.argsort(mean_abs_shap)[::-1][:top_n]
+
+    fig, ax = plt.subplots(figsize=(12, 8), dpi=300)
+    y_positions = np.arange(top_n)[::-1]
+
+    # Colormap for feature values: Coolwarm (Blue = Low, Red = High)
+    cmap = plt.get_cmap("coolwarm")
+
+    for i, f_idx in enumerate(sorted_idx):
+        f_shap = shap_values[:, f_idx]
+        f_vals = feature_matrix[:, f_idx]
+
+        # Normalize feature values to [0, 1]
+        v_min, v_max = np.nanmin(f_vals), np.nanmax(f_vals)
+        norm_vals = (f_vals - v_min) / (v_max - v_min + 1e-8) if v_max > v_min else np.zeros_like(f_vals)
+        colors = cmap(norm_vals)
+
+        # Add slight vertical jitter
+        jitter = np.random.normal(0, 0.08, size=len(f_shap))
+        y_pos = y_positions[i] + jitter
+
+        ax.scatter(f_shap, y_pos, c=colors, s=18, alpha=0.7, edgecolors="none")
+
+    ax.axvline(0, color="black", linestyle="--", linewidth=1.0, alpha=0.7)
+    ax.set_yticks(y_positions)
+    ax.set_yticklabels([feature_names[idx] for idx in sorted_idx], fontsize=10, fontweight="bold")
+    ax.set_xlabel("SHAP Value (Impact on Expected Electron Temperature) [Kelvin]", fontsize=11, fontweight="bold")
+    ax.set_title(f"TEMPEST: Summary Beeswarm Plot (Top {top_n} Attributions)", fontsize=13, fontweight="bold")
+    ax.grid(True, linestyle="--", alpha=0.3, axis="x")
+
+    # Add colorbar for feature value
+    sm = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(vmin=0, vmax=1))
+    sm.set_array([])
+    cbar = fig.colorbar(sm, ax=ax, orientation="vertical", pad=0.02, aspect=25)
+    cbar.set_label("Relative Feature Value (Low $\\to$ High)", fontsize=10, fontweight="bold")
+    cbar.set_ticks([0.0, 1.0])
+    cbar.set_ticklabels(["Low", "High"])
+
+    plt.tight_layout()
+    if save_path:
+        os.makedirs(os.path.dirname(save_path) if os.path.dirname(save_path) else ".", exist_ok=True)
+        plt.savefig(save_path, dpi=300)
+        print(f"Saved Beeswarm Summary Plot to {save_path}")
+    return fig
+

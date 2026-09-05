@@ -6,6 +6,7 @@ omit =
     archive/*
     setup_env*
     setup.py
+    generate_full_visualization_suite.py
 
 [report]
 show_missing = True

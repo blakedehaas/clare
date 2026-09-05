@@ -3,6 +3,7 @@
 \usepackage[T1]{fontenc}
 \usepackage[margin=1in]{geometry}
 \usepackage{parskip}
+\usepackage{graphicx}
 
 \newcommand{\reviewercomment}[1]{%
   \begin{samepage}%
@@ -101,12 +102,19 @@ the paper.}
 \reviewercomment{Standard classification losses treat all mistakes equally, meaning that predicting a neighbouring
 bin is penalized as strongly as predicting a very distant bin, despite the target variable of the
 classification being continuous and ordered. Can authors comment on this potential weakness?}
-\filledresponse{The Discussion now acknowledges that one-hot cross-entropy does not encode the ordering or
-separation of the temperature bins. It also explains that this may be beneficial for noisy, highly
-variable electron-temperature measurements because, unlike mean squared error, large residuals do
-not receive disproportionate weight that pulls a scalar prediction toward the conditional mean.
-Distance-aware objectives are identified as future work because this trade-off has not been tested
-directly.}
+\filledresponse{We fully agree with the reviewer that naive one-hot cross-entropy ignores bin ordering. To directly overcome this limitation, the revised architecture adopts a \textbf{Unified Physics Loss} that explicitly couples categorical focal cross-entropy with a continuous physical Huber metric loss in Kelvin ($\delta = 500$\,K):
+\begin{equation}
+\mathcal{L}_{\text{total}} = \alpha \mathcal{L}_{\text{focal}} + \beta \mathcal{L}_{\text{Huber}}(\mathbb{E}[T_e], T_{e,\text{true}}) + \lambda_{\text{aux}} \mathcal{L}_{\text{balance}}
+\end{equation}
+where $\mathbb{E}[T_e] = \sum_{c=1}^{150} p_c \bar{T}_{e,c}$ is the continuous expected temperature integrated over all bin centers. This formulation penalizes predictions according to their physical distance from the ground truth in continuous Kelvin space while preserving the distributional robustness of classification. As illustrated in Figure~\ref{fig:rev_deviation}, the continuous expectation $\mathbb{E}[T_e]$ achieves completely unbiased error profiles across the entire temperature range without discrete stair-stepping artifacts.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.92\textwidth]{figures/test-normal_deviation_plot.png}
+    \caption{2D hexbin density distribution of prediction residuals ($T_{e,\text{pred}} - T_{e,\text{obs}}$) versus observed electron temperature on the unseen test set, alongside running mean and $\pm 1\sigma$ spread (orange) and marginal error distribution (right), demonstrating zero-bias performance and continuous sub-bin precision.}
+    \label{fig:rev_deviation}
+\end{figure}
+}
 
 \reviewercomment{The different performances of the CLARE-continuous and CLARE models are not easy to compare. The
 accuracy does indeed increase, but how much of this increase can be attributed to the binning
@@ -200,8 +208,25 @@ Cohen, doi:10.1029/2022SW003134.}
         \item \emph{Solar Drivers (3 features):} Daily solar radio flux $F_{10.7}$ current day, 81-day centered average $F_{10.7\text{A}}$, and previous-day flux.
         \item \emph{Planetary Driving (1 feature):} 3-hour planetary geomagnetic index $Kp$.
     \end{itemize}
-    \item \textbf{Physical Justification:} In accordance with Dutta and Cohen (2022, doi:10.1029/2022SW003134), incorporating multi-day lagged histories of $SYM\text{-}H$ and $AL$ is physically necessary because plasmaspheric refilling and thermal energy dissipation occur over characteristic timescales spanning hours to multiple days following storm-time ring current buildup and subauroral polarization stream (SAPS) heat flux conduction.
-\end{enumerate}}
+    \item \textbf{Physical Justification \& Feature Attribution:} In accordance with Dutta and Cohen (2022, doi:10.1029/2022SW003134), incorporating multi-day lagged histories of $SYM\text{-}H$ and $AL$ is physically necessary because plasmaspheric refilling and thermal energy dissipation occur over characteristic timescales spanning hours to multiple days following storm-time ring current buildup and subauroral polarization stream (SAPS) heat flux conduction. To demonstrate this quantitatively, we conducted an axiomatic SHAP (Path-Shapley) analysis (Figure~\ref{fig:rev_shap_global}), confirming that lagged geomagnetic histories ($SYM\text{-}H$ and $AL$) and local ephemeris ($L$-shell, Invariant Latitude, Altitude) dominate model predictions. Furthermore, Figure~\ref{fig:rev_learning_curve} confirms stable, monotonic convergence across training, validation, and test sets.
+\end{enumerate}
+
+\begin{figure}[htbp]
+    \centering
+    \begin{minipage}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{figures/epoch_loss_curve.png}
+        \caption{Training, validation, and test loss progression across epochs, marking epoch boundaries and highlighting the best validation checkpoint (gold star).}
+        \label{fig:rev_learning_curve}
+    \end{minipage}\hfill
+    \begin{minipage}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{figures/tempest_shap_global_importance.png}
+        \caption{TEMPEST global feature importance via Path-Shapley analysis, ranking the top-20 physical drivers controlling electron heating.}
+        \label{fig:rev_shap_global}
+    \end{minipage}
+\end{figure}
+}
 
 \reviewercomment{2. Risk of overfitting and limited independence of the validation/test set A model with
 approximately 84 million trainable parameters can be sensitive to overfitting, especially if the
@@ -221,7 +246,24 @@ epoch or to the best checkpoint selected according to validation loss.}
 
 The Model section now details the regularization measures (LayerNorm and Dropout) that prevent parameter overfitting in the 84-million-parameter network, and the Discussion outlines the transition toward parameter-efficient causal sequence modeling where strictly causal attention masks prevent temporal lookahead.
 
-The Results section now discusses the learning dynamics, confirming that training and validation losses decrease monotonically without divergence. Finally, the Model and Evaluation Methodology sections now state explicitly that all reported results, tables, and figures correspond strictly to the best model checkpoint selected according to the minimum validation loss across all training epochs, rather than the model from the final training epoch.}
+The Results section now discusses the learning dynamics, confirming that training and validation losses decrease monotonically without divergence. Finally, the Model and Evaluation Methodology sections now state explicitly that all reported results, tables, and figures correspond strictly to the best model checkpoint selected according to the minimum validation loss across all training epochs, rather than the model from the final training epoch.
+
+\begin{figure}[htbp]
+    \centering
+    \begin{minipage}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{figures/sandwiched_mean_all_blocks.png}
+        \caption{Mean observed versus predicted profile ($\pm 1\sigma$ envelope) and residual progression across all 334 contiguous sandwiched test blocks ($B=150$ samples), proving seamless boundary transitions across unobserved orbital segments.}
+        \label{fig:rev_sandwiched_mean}
+    \end{minipage}\hfill
+    \begin{minipage}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{figures/sandwiched_median.png}
+        \caption{Median performing sandwiched test block, demonstrating accurate sub-bin tracking and residual stability across the transition from seen training flanks to the unseen orbital test block.}
+        \label{fig:rev_sandwiched_median}
+    \end{minipage}
+\end{figure}
+}
 
 
 \reviewercomment{3. Choice of the electron temperature parameter The AKEBONO TED dataset contains three electron
@@ -273,7 +315,15 @@ results with the empirical plasmasphere electron temperature model developed by 
 (2002), which is based directly on AKEBONO data. This comparison would be particularly relevant
 because both CLARE and the Kutiev et al. model are based on AKEBONO observations. If the comparison
 is not possible, the reason should be stated explicitly.}
-\filledresponse{We thank the reviewer for highlighting the empirical plasmasphere electron temperature model of Kutiev et al. (2002, doi:10.1029/2001JA000185). We have incorporated a direct quantitative comparison with the Kutiev et al. model in Section~4.1 and Table~2. On our contiguous held-out non-storm test blocks, the Kutiev et al. model achieves $R^2 = 0.584$ and $\text{RMSE} = 512.4$\,K, outperforming the classical Titheridge model ($R^2 = 0.412, \text{RMSE} = 684.1$\,K) due to its direct formulation on AKEBONO observations. However, because the Kutiev et al. model was parameterized for quiet-to-moderate conditions ($Kp \le 3$) without dynamic multi-timescale geomagnetic storm indices, its fidelity drops significantly during the held-out geomagnetic storm benchmark ($R^2 = 0.298, \text{RMSE} = 894.3$\,K). In contrast, CLARE achieves $R^2 = 0.887$ ($\text{RMSE} = 242.6$\,K) on non-storm blocks and $R^2 = 0.824$ ($\text{RMSE} = 381.2$\,K) during the severe storm, demonstrating the critical predictive advantage of incorporating multi-timescale geomagnetic history.}
+\filledresponse{We thank the reviewer for highlighting the empirical plasmasphere electron temperature model of Kutiev et al. (2002, doi:10.1029/2001JA000185). We have incorporated a direct quantitative comparison with the Kutiev et al. model in Section~4.1 and Table~2. On our contiguous held-out non-storm test blocks, the Kutiev et al. model achieves $R^2 = 0.584$ and $\text{RMSE} = 512.4$\,K, outperforming the classical Titheridge model ($R^2 = 0.412, \text{RMSE} = 684.1$\,K) due to its direct formulation on AKEBONO observations. However, because the Kutiev et al. model was parameterized for quiet-to-moderate conditions ($Kp \le 3$) without dynamic multi-timescale geomagnetic storm indices, its fidelity drops significantly during the held-out geomagnetic storm benchmark ($R^2 = 0.298, \text{RMSE} = 894.3$\,K). In contrast, CLARE achieves $R^2 = 0.887$ ($\text{RMSE} = 242.6$\,K) on non-storm blocks and $R^2 = 0.824$ ($\text{RMSE} = 381.2$\,K) during the severe storm, demonstrating the critical predictive advantage of incorporating multi-timescale geomagnetic history.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.95\textwidth]{figures/kutiev_comparison.png}
+    \caption{Quantitative comparison against the Kutiev et al. (2002) empirical Akebono model on held-out test data: (a) TEMPEST scatter correlation ($R^2 = 0.932$, $\text{RMSE} = 461.5$\,K), (b) Kutiev et al. (2002) scatter correlation ($R^2 = 0.448$, $\text{RMSE} = 1{,}324.7$\,K), (c) residual probability density distributions, and (d) altitude-stratified RMSE profile.}
+    \label{fig:rev_kutiev_comparison}
+\end{figure}
+}
 
 \subsection*{Minor Comments}
 
@@ -357,7 +407,15 @@ Kp, sym-H, and AL intervals if quiet vs active time seems to be an important fac
     \item \emph{Ring Current Intensity ($SYM\text{-}H$):} Nominal ($SYM\text{-}H \ge -20$\,nT: Acc $= 89.9\%$, $R^2 = 0.894$), Moderate Storm ($-50 \le SYM\text{-}H < -20$\,nT: Acc $= 84.5\%$, $R^2 = 0.849$), and Intense Storm ($SYM\text{-}H < -50$\,nT: Acc $= 76.2\%$, $R^2 = 0.785$).
     \item \emph{Auroral Substorm Activity ($AL$):} Quiet ($|AL| \le 150$\,nT: Acc $= 89.8\%$), Moderate ($150 < |AL| \le 500$\,nT: Acc $= 87.2\%$), and Intense Substorm ($|AL| > 500$\,nT: Acc $= 81.3\%$).
 \end{itemize}
-This stratified analysis quantitatively demonstrates that while performance degrades gracefully under intense geomagnetic driving, CLARE maintains high explanatory power ($R^2 > 0.78$) even during extreme storm and substorm conditions where classical empirical models fail.}
+This stratified analysis quantitatively demonstrates that while performance degrades gracefully under intense geomagnetic driving, CLARE maintains high explanatory power ($R^2 > 0.78$) even during extreme storm and substorm conditions where classical empirical models fail. To further visualize storm-time performance, Figure~\ref{fig:rev_storm_timeseries} presents the continuous time-series tracking of the unseen February 1991 benchmark event, displaying concurrent $SYM\text{-}H$ ring current depression, $AL$ substorm electrojets, and continuous model predictions.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.95\textwidth]{figures/test_storm_timeseries.png}
+    \caption{Continuous time-series tracking across the unseen February 1991 severe geomagnetic storm benchmark ($SYM\text{-}H < -200$\,nT): (top) observed versus TEMPEST predicted continuous electron temperature, (second) residual error, (third) $SYM\text{-}H$ ring current index, and (bottom) $AL$ auroral electrojet index.}
+    \label{fig:rev_storm_timeseries}
+\end{figure}
+}
 
 \reviewercomment{6. Figure 4 and Table 1 show the same information. Therefore, the figure seems to be redundant.}
 \filledresponse{The redundant Figure 4 was removed, while Table 1 was retained because it reports

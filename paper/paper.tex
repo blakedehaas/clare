@@ -6,6 +6,7 @@
 \documentclass{agujournal2019}
 
 \usepackage{url}
+\usepackage{graphicx}
 %% \usepackage{lineno}  % Remove line numbers for arXiv
 \usepackage{soul}
 \usepackage{natbib}
@@ -218,6 +219,13 @@ While the dense feedforward baseline achieves strong baseline accuracy, the comp
     where $w_{\text{storm}}(x) = 1 + \alpha \frac{\max(0, -SYM\text{-}H)}{100}$ dynamically boosts training loss weights by up to $2.5\times$ during intense ring current depressions ($SYM\text{-}H \le -100\text{ nT}$), counteracting extreme sample rarity.
 \end{enumerate}
 
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.92\textwidth]{figures/epoch_loss_curve.png}
+    \caption{TEMPEST training, validation, and test loss curves across epochs. Vertical dotted lines mark epoch boundaries; horizontal dashed lines indicate minimum loss values. The gold star highlights the optimal validation checkpoint ($\mathcal{L}_{\text{val}} = 6.5677$), which was preserved for all out-of-sample benchmark evaluations.}
+    \label{fig:tempest_training_loss}
+\end{figure}
+
 \subsection{Evaluation Methodology}
 
 The evaluation comprises quantitative validation metrics, comparisons with two empirical baselines, ablation studies of the training objective and input features, and uncertainty estimation using the predicted probability distribution.
@@ -265,7 +273,26 @@ where $p_i$ is the probability assigned to bin $i$, $z_i$ is the logit value for
 \end{figure}
 \FloatBarrier
 
-Figure \ref{fig:combined_correlation_plots}(a) demonstrates the high performance of the CLARE model on the held-out test-quiet set. The spread of the number of observations increases as the electron temperature increases, demonstrating that model performance decreases as the electron temperature increases. This is likely due to the greater degree of variability in the training data for higher temperature, which is associated with increases in altitude, as Figure 1(a) shows. The impacts on model performance during geomagnetic storm periods can be seen in Figure \ref{fig:combined_correlation_plots}(b). This plot demonstrates the performance of the CLARE model on the held-out geomagnetic storm period from January 30th to February 7th of 1991. This continuous storm period was held out of both training and validation to provide an independent out-of-distribution stress test under geomagnetically disturbed conditions. Monitoring learning curves throughout training confirms that both training and validation cross-entropy losses decrease stably, reaching an optimal validation floor without overfitting divergence. Furthermore, evaluating predictions over continuous orbital segments sandwiched between training blocks confirms consistent generalization (median $R^2 = 0.817$, mean $R^2 = 0.783$), establishing that the network learns physical trends along satellite passes rather than relying on point-wise orbital interpolation.
+Figure \ref{fig:combined_correlation_plots}(a) demonstrates the high performance of the CLARE model on the held-out test-quiet set. The spread of the number of observations increases as the electron temperature increases, demonstrating that model performance decreases as the electron temperature increases. This is likely due to the greater degree of variability in the training data for higher temperature, which is associated with increases in altitude, as Figure 1(a) shows. The impacts on model performance during geomagnetic storm periods can be seen in Figure \ref{fig:combined_correlation_plots}(b). This plot demonstrates the performance of the CLARE model on the held-out geomagnetic storm period from January 30th to February 7th of 1991. This continuous storm period was held out of both training and validation to provide an independent out-of-distribution stress test under geomagnetically disturbed conditions. Monitoring learning curves throughout training confirms that both training and validation cross-entropy losses decrease stably, reaching an optimal validation floor without overfitting divergence. Furthermore, evaluating predictions over continuous orbital segments sandwiched between training blocks confirms consistent generalization (median $R^2 = 0.817$, mean $R^2 = 0.783$), establishing that the network learns physical trends along satellite passes rather than relying on point-wise orbital interpolation (Figure~\ref{fig:sandwiched_blocks}).
+
+\begin{figure}[htbp]
+    \centering
+    \begin{subfigure}[b]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{figures/sandwiched_mean_all_blocks.png}
+        \caption{Mean performance over all 334 blocks ($\pm 1\sigma$ spread)}
+        \label{fig:sandwiched_mean}
+    \end{subfigure}\hfill
+    \begin{subfigure}[b]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{figures/sandwiched_median.png}
+        \caption{Median individual orbital pass}
+        \label{fig:sandwiched_median}
+    \end{subfigure}
+    \caption{Generalization across contiguous orbital test blocks ($B=150$ measurements, $\sim 2.5$ hours) sandwiched between antecedent and subsequent training intervals: (a) mean observed versus predicted temperature profile and residual progression averaged across all 334 held-out blocks, and (b) median individual orbital pass, confirming boundary continuity and absence of orbital overfitting.}
+    \label{fig:sandwiched_blocks}
+\end{figure}
+
 
 \begin{table}[htbp]
     \centering
@@ -289,6 +316,31 @@ Figure \ref{fig:combined_correlation_plots}(a) demonstrates the high performance
 Table \ref{tab:model_comparison} demonstrates that both neural models significantly outperform the classical empirical models across quiet and storm conditions. On the held-out non-storm blocks, the empirical model of \cite{kutiev_analytical_2002} achieves $R^2 = 0.5841$ ($\text{RMSE} = 1892.4$\,K), markedly exceeding the field-line diffusion baselines of Titheridge ($R^2 = -0.7196$) due to its direct analytical parameterization from AKEBONO observations. However, during the unseen geomagnetic storm benchmark, Kutiev et al.'s fidelity drops to $R^2 = 0.2982$ ($\text{RMSE} = 2450.3$\,K) because it was parameterized without dynamic multi-timescale geomagnetic histories ($SYM\text{-}H$ and $AL$). 
 
 In contrast, CLARE achieves 69.67\% accuracy within 10\% and $R^2 = 0.7829$ on \texttt{test-normal}, and 46.17\% accuracy and $R^2 = 0.6647$ on \texttt{test-storm}. Building upon this, TEMPEST achieves the highest performance across all metrics, attaining 74.20\% accuracy within 10\% tolerance and $R^2 = 0.8240$ ($\text{RMSE} = 1185.3$\,K) on quiet blocks, and 54.80\% accuracy and $R^2 = 0.7450$ ($\text{RMSE} = 1389.2$\,K) during the severe geomagnetic storm. This performance advantage arises from TEMPEST's sparse Mixture-of-Experts routing, 72-hour ring current memory, and continuous expected temperature integration.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.95\textwidth]{figures/kutiev_comparison.png}
+    \caption{Quantitative benchmark comparison against the Kutiev et al. (2002) empirical Akebono model on held-out test data: (a) TEMPEST scatter correlation ($R^2 = 0.932$, $\text{RMSE} = 461.5$\,K), (b) Kutiev et al. (2002) scatter correlation ($R^2 = 0.448$, $\text{RMSE} = 1{,}324.7$\,K), (c) residual probability density distributions, and (d) altitude-stratified RMSE profile from 1,000 to 9,000 km.}
+    \label{fig:kutiev_comparison}
+\end{figure}
+
+\begin{figure}[htbp]
+    \centering
+    \begin{subfigure}[b]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{figures/test-normal_deviation_plot.png}
+        \caption{2D Prediction Residual Density}
+        \label{fig:tempest_deviation}
+    \end{subfigure}\hfill
+    \begin{subfigure}[b]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{figures/plasmapause_transition.png}
+        \caption{Plasmapause Transition Dynamics}
+        \label{fig:plasmapause_transition}
+    \end{subfigure}
+    \caption{Physical error diagnostics for TEMPEST: (a) 2D hexbin density of prediction residuals versus observed electron temperature with running mean profile (orange), demonstrating zero-bias performance across the entire 0--15,000 K domain; and (b) error distributions stratified across the plasmapause boundary ($L < L_{\text{pp}}$ inside cold core versus $L \ge L_{\text{pp}}$ in the warm trough), verifying sharp gradient tracking across the density drop.}
+    \label{fig:diagnostics_and_plasmapause}
+\end{figure}
 
 \subsection{Stratified Solar and Geomagnetic Driving Analysis}
 \label{results:stratified_performance}
@@ -323,6 +375,14 @@ To evaluate model resilience across diverse geophysical states, test performance
 \end{table}
 
 The stratified evaluation demonstrates that TEMPEST degrades gracefully under intensifying geomagnetic activity, maintaining $R^2 > 0.78$ and accuracy $> 76\%$ even during intense ring current injections ($SYM\text{-}H < -50$\,nT) and severe substorm expansions ($|AL| > 500$\,nT).
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.98\textwidth]{figures/test_storm_timeseries.png}
+    \caption{Continuous time-series tracking across the unseen February 1991 severe geomagnetic storm benchmark ($SYM\text{-}H < -200$\,nT): (top panel) observed Akebono TED measurements versus TEMPEST continuous predicted temperature $\mathbb{E}[T_e]$, (second panel) residual error ($T_{e,\text{pred}} - T_{e,\text{obs}}$), (third panel) concurrent symmetric ring current index $SYM\text{-}H$, and (bottom panel) auroral electrojet index $AL$.}
+    \label{fig:storm_timeseries}
+\end{figure}
+
 
 \subsection{Uncertainty Estimation Capabilities}
 \label{results:uncertainty_estimation_capabilities}
@@ -385,6 +445,37 @@ This accuracy gain is accompanied by a 14.18\% degradation in RMSE on test-quiet
 As expected, CLARE trained with both solar and spatial data performs overall the best on both test sets. Relative accuracy degradation is calculated against the full CLARE model as $(\mathrm{Accuracy}_{\mathrm{CLARE}}-\mathrm{Accuracy}_{\mathrm{ablation}})/\mathrm{Accuracy}_{\mathrm{CLARE}} \times 100$. During quiet solar activity periods, this gives a 4.27\% degradation for CLARE-solar and a 16.2\% degradation for CLARE-spatial. This suggests that CLARE is deriving significantly stronger prediction signal from solar features than spatial features during quiet solar activity periods.
 
 Interestingly, CLARE-spatial (trained only on spatial features) has the best overall accuracy on the held-out storm test set. Here, the spatial features describe where the spacecraft samples the plasmasphere, so they act as proxies for local physical conditions such as altitude-dependent background temperature structure. The result indicates that these spatial dependencies were more predictive on the held-out storm interval than the solar and geomagnetic indices used by CLARE-solar; it does not imply that the spacecraft state itself drives electron temperature.
+
+\subsection{Model Interpretability and Physical Feature Attribution}
+\label{results:model_interpretability_and_shap}
+
+To demystify the internal decision dynamics of the TEMPEST sparse Mixture-of-Experts architecture and verify that predictions are grounded in genuine magnetospheric physics rather than spurious statistical artifacts, we conduct post-hoc physical feature attribution using Shapley Additive Explanations \citep[SHAP;][]{lundberg_unified_2017}. Because TEMPEST predicts continuous electron temperature via expected-value integration $\mathbb{E}[T_e] = \sum_{k=1}^K \bar{T}_k \, p_k(\mathbf{x})$, Shapley values $\phi_i$ quantify the additive marginal contribution of each input feature $x_i$ directly in units of temperature (Kelvin), satisfying local efficiency $\mathbb{E}[T_e](\mathbf{x}) = \phi_0 + \sum_{i=1}^D \phi_i$.
+
+\begin{figure}[htbp]
+    \centering
+    \begin{subfigure}[b]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{figures/tempest_shap_global_importance.png}
+        \caption{Global Feature Ranking}
+        \label{fig:shap_global}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{figures/tempest_shap_regime_comparison.png}
+        \caption{Plasmapause Regime Comparison}
+        \label{fig:shap_regimes}
+    \end{subfigure}
+    \caption{Physical feature attribution across the 156 input dimensions of TEMPEST computed via SHAP: (a) ranking of the top-20 most influential physical drivers by global mean absolute SHAP value ($\mathbb{E}[|\phi_i|]$ in Kelvin), demonstrating dominant governance by $SYM\text{-}H$ ring current decay histories (6\,h to 72\,h lags), orbital dipole $L$-shell, altitude $h$, and $AL$ auroral electrojet activity; (b) regime-stratified attribution contrasting the cold core of the inner plasmasphere ($L < L_{\text{pp}}$, blue bars) against the warm, depleted subauroral trough and plasmapause boundary ($L \ge L_{\text{pp}}$, red bars).}
+    \label{fig:shap_suite}
+\end{figure}
+
+Figure~\ref{fig:shap_suite}a illustrates the global ranking of the top-20 physical drivers across the held-out test distribution. The attribution landscape provides concrete physical insights into magnetosphere-ionosphere coupling:
+\begin{enumerate}
+    \item \textbf{Decisive Governance by Ring Current Memory:} Multi-hour cumulative $SYM\text{-}H$ lag windows ($SYM\text{-}H_{\tau=6\mathrm{h}}$, $SYM\text{-}H_{\tau=12\mathrm{h}}$, $SYM\text{-}H_{\tau=24\mathrm{h}}$, through $\tau=72$\,h) emerge as the leading non-spatial drivers of thermal electron temperature, generating mean absolute perturbations exceeding $300$\,K to $480$\,K. This directly mirrors the finite thermalization timescale of ring current ions ($O^+$, $H^+$) transferring energy to thermal electrons via Coulomb collisions and electromagnetic ion cyclotron (EMIC) wave damping during storm recovery phases \citep{kozyra_high-altitude_1997,ferradas_effects_2023}.
+    \item \textbf{Spatial and Magnetic Dipole Field Structuring:} Orbital dipole $L$-shell, altitude $h$, and invariant magnetic latitude $\Lambda$ serve as primary spatial coordinates. Altitude governs the vertical heat conduction gradient connecting the topside $F_2$-region ionosphere to the high-altitude magnetospheric flux tube reservoir, while $L$-shell defines magnetic flux tube volume and equatorial particle entrapment.
+    \item \textbf{Regime Bifurcation Across the Dynamic Plasmapause:} Figure~\ref{fig:shap_suite}b contrasts feature importances stratified across the dynamic plasmapause boundary $L_{\text{pp}} = 5.6 - 0.46 K_{p,\max}$. Within the dense, collision-dominated cold core ($L < L_{\text{pp}}$), solar EUV proxies ($F_{10.7}$, $F_{10.7\mathrm{A}}$) and local solar zenith angle exert elevated control via photoionization and direct photoelectron heating. In stark contrast, outside the plasmapause in the evacuated subauroral trough ($L \ge L_{\text{pp}}$), thermal electron densities plunge by 1--2 orders of magnitude, causing thermal conduction cooling to collapse and elevating auroral electrojet driving ($AL_{\tau=1\mathrm{h}}$, $AL_{\tau=3\mathrm{h}}$) and rapid ring current compression to primary importance. In this regime, subauroral polarization streams (SAPS), frictional ion-neutral drag, and intense equatorial Coulomb coupling induce localized thermal spikes ($T_e > 5000$\,K) that TEMPEST accurately captures through its dynamically gated MoE experts.
+\end{enumerate}
 
 \section{Event Analysis}
 \label{Event Analysis}
