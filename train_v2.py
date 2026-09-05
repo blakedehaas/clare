@@ -4,8 +4,8 @@ train_v2.py - TEMPEST: Thermal Electron Magnetospheric Prediction with Expert Sp
 Synthesizes the best discoveries across all experimental investigations:
 1. Complete 156-Feature Space:
    - 8 orbital and magnetic coordinates (Altitude, GCLAT, GCLON, ILAT, GLAT, GMLT, XXLAT, XXLON)
-   - 31 lags of Auroral Electrojet (AL_index_0 to AL_index_30) capturing substorm injection memory
-   - 145 lags of Ring Current index (SYM_H_0 to SYM_H_144) capturing 2.5 hours of geomagnetic storm depression
+   - 31 lags of Auroral Electrojet (AL_index_0 to AL_index_30) capturing 5 hours of substorm injection memory
+   - 145 lags of Ring Current index (SYM_H_0 to SYM_H_144) capturing 72 hours (3 days) of geomagnetic storm ring current history
    - Solar drivers: f107_index_0..3 and Kp_index
    - Physics-Informed Plasmapause Features:
      * Magnetic L-shell: L = (R_E + Alt) / (R_E * cos^2(ILAT))

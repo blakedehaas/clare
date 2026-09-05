@@ -81,6 +81,69 @@ class TestContiguousBlocks(unittest.TestCase):
                 min_separation_seconds = time_deltas_before.min().total_seconds()
                 self.assertGreater(min_separation_seconds, block_size * 10)
 
+    def test_four_way_partitioning_disjointness(self):
+        """Tests that train_chunks, val-normal, test-normal, and storm holdout are strictly disjoint."""
+        timestamps = pd.date_range("1991-01-01", periods=10000, freq="12s")
+        df = pd.DataFrame({
+            "Altitude": np.random.uniform(1000, 8000, size=len(timestamps)),
+            "Te1": np.random.uniform(1000, 10000, size=len(timestamps)),
+        }, index=timestamps)
+
+        # 1. Storm interval
+        storm_mask = (df.index >= "1991-01-01 02:00:00") & (df.index < "1991-01-01 04:00:00")
+        storm_df = df[storm_mask]
+        remaining = df[~storm_mask].copy()
+
+        block_size = 50
+        num_blocks = len(remaining) // block_size
+        remaining = remaining.iloc[:num_blocks * block_size].copy()
+        remaining["block_id"] = np.repeat(np.arange(num_blocks), block_size)
+
+        num_val = 5
+        num_test = 5
+        rng = np.random.RandomState(42)
+        candidates = list(range(2, num_blocks - 2))
+        perm = rng.permutation(candidates)
+
+        selected_set = set()
+        val_blocks = []
+        test_blocks = []
+        for b in perm:
+            if (b - 1) not in selected_set and (b + 1) not in selected_set:
+                selected_set.add(b)
+                val_blocks.append(b)
+                if len(val_blocks) == num_val:
+                    break
+
+        for b in perm:
+            if b in selected_set:
+                continue
+            if (b - 1) not in selected_set and (b + 1) not in selected_set:
+                selected_set.add(b)
+                test_blocks.append(b)
+                if len(test_blocks) == num_test:
+                    break
+
+        val_set = set(val_blocks)
+        test_set = set(test_blocks)
+        guard_set = set()
+        for b in (val_set | test_set):
+            guard_set.add(b - 1)
+            guard_set.add(b + 1)
+        guard_set = guard_set - val_set - test_set
+
+        val_df = remaining[remaining["block_id"].isin(val_set)]
+        test_df = remaining[remaining["block_id"].isin(test_set)]
+        train_df = remaining[~remaining["block_id"].isin(val_set | test_set | guard_set)]
+
+        # Check disjointness
+        self.assertEqual(len(set(val_df.index).intersection(set(test_df.index))), 0)
+        self.assertEqual(len(set(val_df.index).intersection(set(train_df.index))), 0)
+        self.assertEqual(len(set(test_df.index).intersection(set(train_df.index))), 0)
+        self.assertEqual(len(set(storm_df.index).intersection(set(train_df.index))), 0)
+        self.assertEqual(len(set(storm_df.index).intersection(set(val_df.index))), 0)
+        self.assertEqual(len(set(storm_df.index).intersection(set(test_df.index))), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

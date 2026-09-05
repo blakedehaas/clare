@@ -18,8 +18,8 @@ import argparse
 
 # --------- ARGUMENTS & CONFIG -----------------
 parser = argparse.ArgumentParser(description="Evaluate CLARE Space Weather Models")
-parser.add_argument("--model_type", type=str, default="decoder", choices=["decoder", "feed_forward"],
-                    help="Model architecture: 'decoder' or 'feed_forward'")
+parser.add_argument("--model_type", type=str, default="tempest", choices=["tempest", "decoder", "feed_forward"],
+                    help="Model architecture: 'tempest', 'decoder', or 'feed_forward'")
 parser.add_argument("--model_name", type=str, default="mini",
                     help="Model preset name: mini, micro, small, medium, 1_47")
 parser.add_argument("--checkpoint", type=str, default=None,
@@ -79,7 +79,33 @@ def main():  # pragma: no cover
         print(f"GPU Hardware: {torch.cuda.get_device_name(0)}")
 
     # Model & Checkpoint resolution
-    if model_type == "decoder":
+    if model_type == "tempest":
+        from train_v2 import TEMPEST, ALL_INPUT_COLUMNS, NUM_INPUT_FEATURES
+        ckpt_path = args.checkpoint if args.checkpoint else f"checkpoints/tempest_{model_name}_best.pth"
+        if not os.path.exists(ckpt_path):
+            fallback_options = ["checkpoints/tempest_optimal_best.pth", f"checkpoints/{model_name}.pth", "checkpoints/checkpoint.pth"]
+            for opt in fallback_options:
+                if os.path.exists(opt):
+                    ckpt_path = opt
+                    break
+        print(f"Loading TEMPEST checkpoint from: {ckpt_path}")
+        checkpoint_data = torch.load(ckpt_path, map_location=device, weights_only=False) if os.path.exists(ckpt_path) else {}
+        d_model = checkpoint_data.get("d_model", 256)
+        model = TEMPEST(
+            num_features=NUM_INPUT_FEATURES,
+            d_model=d_model,
+            expert_dim=checkpoint_data.get("expert_dim", d_model * 2),
+            num_experts=checkpoint_data.get("num_experts", 8),
+            top_k=checkpoint_data.get("top_k", 2),
+            n_layers=checkpoint_data.get("n_layers", 4),
+            n_hc=checkpoint_data.get("n_hc", 4),
+            vocab_size=150
+        ).to(device)
+        if "model_state_dict" in checkpoint_data:
+            model.load_state_dict(checkpoint_data["model_state_dict"])
+        model.eval()
+        print(f"Loaded TEMPEST ({model.count_parameters()[0]:,} total params).")
+    elif model_type == "decoder":
         from train_decoder import GPTConfig, GPT, SpaceWeatherMeasurementTokenizer, load_dataset
         ckpt_path = args.checkpoint if args.checkpoint else f"checkpoints/decoder_{model_name}_best.pth"
         if not os.path.exists(ckpt_path):
@@ -172,13 +198,19 @@ def main():  # pragma: no cover
                 true_values.extend(batch_true_k)
                 times.extend(batch_times)
     else:
-        # Load dataset
-        test_ds = datasets.Dataset.load_from_disk(f"dataset/processed_dataset/{dataset}")
-        test_ds = test_ds.remove_columns(['Ne1', 'Pv1', 'Te2', 'Ne2', 'Pv2', 'Te3', 'Ne3', 'Pv3', 'I1', 'I2', 'I3'])
+        # Load dataset: support both path conventions
+        ds_path = f"dataset/processed_dataset_01_31_storm/{dataset}"
+        if not os.path.exists(ds_path):
+            ds_path = f"dataset/processed_dataset/{dataset}"
+        test_ds = datasets.Dataset.load_from_disk(ds_path)
+        cols_to_drop = [c for c in ['Ne1', 'Pv1', 'Te2', 'Ne2', 'Pv2', 'Te3', 'Ne3', 'Pv3', 'I1', 'I2', 'I3'] if c in test_ds.column_names]
+        if cols_to_drop:
+            test_ds = test_ds.remove_columns(cols_to_drop)
 
         def normalize_batch(batch):
             for col, norm_func in constants.NORMALIZATIONS.items():
-                batch[col] = norm_func(batch[col])
+                if col in batch:
+                    batch[col] = norm_func(batch[col])
             return batch
 
         test_ds = test_ds.map(normalize_batch, batched=True, batch_size=10000, num_proc=os.cpu_count())
@@ -191,6 +223,8 @@ def main():  # pragma: no cover
         }
         means, stds = {}, {}
         stats_file = f'checkpoints/{model_name}_norm_stats.json'
+        if not os.path.exists(stats_file):
+            stats_file = 'checkpoints/norm_stats.json'
         if os.path.exists(stats_file):
             with open(stats_file, 'r') as f:
                 stats = json.load(f)
@@ -202,20 +236,38 @@ def main():  # pragma: no cover
             for col in group_cols:
                 group_name = '_'.join(col.split('_')[:-1]) if col.split('_')[-1].isdigit() else col
                 values = np.array(batch[col], dtype=np.float32)
-                batch[col] = (values - means[group_name]) / stds[group_name]
+                if group_name in means and group_name in stds:
+                    batch[col] = (values - means[group_name]) / stds[group_name]
             return batch
 
         test_ds = test_ds.map(normalize_group, batched=True, batch_size=10000, num_proc=os.cpu_count())
 
         def convert_to_tensor(row):
-            input_ids = torch.tensor([v for k,v in row.items() if k in input_columns])
-            label = torch.tensor([v for k,v in row.items() if k in output_columns])
+            if model_type == "tempest":
+                alt_raw = float(row['Altitude'])
+                ilat_raw = float(row['ILAT'])
+                kp_raw = float(row['Kp_index'])
+                R_E = 6371.0
+                cos_ilat = np.cos(np.deg2rad(ilat_raw))
+                cos_sq = max(float(cos_ilat ** 2), 1e-4)
+                l_shell = (R_E + alt_raw) / (R_E * cos_sq)
+                kp_true = kp_raw / 10.0
+                l_pp = 5.6 - 0.46 * kp_true
+                in_pp = 1.0 if l_shell < l_pp else 0.0
+                l_norm = float(np.clip((l_shell - 4.0) / 3.0, -2.0, 4.0))
+
+                base_vals = [float(row[k]) for k in input_columns]
+                input_ids = torch.tensor(base_vals + [l_norm, in_pp], dtype=torch.float32)
+            else:
+                input_ids = torch.tensor([float(v) for k, v in row.items() if k in input_columns], dtype=torch.float32)
+
+            label = torch.tensor([float(row['Te1'])], dtype=torch.float32)
             return {
                 "input_ids": input_ids, 
                 "label": label,
                 "DateTimeFormatted": row['DateTimeFormatted']
             }
-        test_ds = test_ds.map(convert_to_tensor, num_proc=os.cpu_count(), remove_columns=all_columns)
+        test_ds = test_ds.map(convert_to_tensor, num_proc=os.cpu_count(), remove_columns=[c for c in all_columns if c in test_ds.column_names])
 
         def custom_collate(batch):
             input_ids = torch.stack([torch.tensor(item['input_ids']) for item in batch])
@@ -227,7 +279,7 @@ def main():  # pragma: no cover
                 'DateTimeFormatted': datetimes
             }
 
-        test_loader = DataLoader(test_ds, batch_size=512, shuffle=False, num_workers=os.cpu_count(), collate_fn=custom_collate)
+        test_loader = DataLoader(test_ds, batch_size=512, shuffle=False, num_workers=0, collate_fn=custom_collate)
 
         with torch.no_grad():
             for batch in tqdm(test_loader, desc="Evaluating"):
@@ -239,7 +291,12 @@ def main():  # pragma: no cover
                 entropy = -torch.sum(softmaxed * torch.log(softmaxed + 1e-10), dim=1).cpu().numpy()
                 entropy_list.extend(entropy)
 
-                y_pred = torch.argmax(logits, dim=1) * 100 + 50
+                if model_type == "tempest":
+                    bin_centers = torch.arange(150, device=device, dtype=torch.float32) * 100.0 + 50.0
+                    y_pred = (softmaxed * bin_centers.unsqueeze(0)).sum(dim=-1)
+                else:
+                    y_pred = torch.argmax(logits, dim=1) * 100 + 50
+
                 predictions.extend(y_pred.flatten().tolist())
                 true_values.extend(y.flatten().tolist())
                 times.extend(batch['DateTimeFormatted'])

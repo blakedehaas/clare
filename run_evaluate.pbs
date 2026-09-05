@@ -1,5 +1,5 @@
 #!/bin/bash
-#PBS -N eval_1_48
+#PBS -N eval_tempest
 #PBS -A UCUL0008
 #PBS -l select=1:ncpus=8:ngpus=1:mem=32GB
 #PBS -l walltime=02:00:00
@@ -32,9 +32,9 @@ echo "nvidia-smi output:"
 nvidia-smi
 echo ""
 
-# Run your evaluation script
-echo "Running Python script: evaluate.py..."
-python evaluate.py
+# Run TEMPEST evaluation script
+echo "Running Python script: evaluate.py --model_type tempest --model_name tempest_optimal..."
+python evaluate.py --model_type tempest --model_name tempest_optimal
 
 EXIT_CODE=$? 
 echo "Python script finished with exit code: $EXIT_CODE"

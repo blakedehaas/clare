@@ -251,16 +251,21 @@ def load_partitioned_dataloaders(
     data_dir: str,
     batch_size: int = 512,
     num_workers: int = 2
-) -> Tuple[DataLoader, DataLoader, DataLoader]:
-    """Loads train_chunks, test-normal, and test-storm with pinned memory."""
+) -> Tuple[DataLoader, DataLoader]:
+    """
+    Loads train_chunks and val-normal with pinned memory.
+    Enforces scientific holdout: unseen test-normal and test-storm are strictly
+    excluded from hyperparameter tuning and model selection.
+    """
     train_dir = os.path.join(data_dir, "train_chunks")
-    val_normal_dir = os.path.join(data_dir, "test-normal")
-    val_storm_dir = os.path.join(data_dir, "test-storm")
+    val_normal_dir = os.path.join(data_dir, "val-normal")
+    if not os.path.exists(val_normal_dir):
+        val_normal_dir = os.path.join(data_dir, "test-normal")
 
     if not os.path.exists(train_dir):
         raise FileNotFoundError(f"Train directory not found: {train_dir}")
 
-    # Load 1-2 train chunks for agile HPO trials
+    # Load train chunks for agile HPO trials
     train_ds_list = []
     chunk_dirs = sorted([d for d in os.listdir(train_dir) if d.startswith("train_chunk_")])
     for chunk_name in chunk_dirs[:3]:  # Use first 3 chunks (~750k samples) for fast trial exploration
@@ -269,11 +274,9 @@ def load_partitioned_dataloaders(
 
     combined_train = datasets.concatenate_datasets(train_ds_list)
     val_normal_ds = datasets.Dataset.load_from_disk(val_normal_dir)
-    val_storm_ds = datasets.Dataset.load_from_disk(val_storm_dir)
 
     train_dataset = SpaceWeatherDataset(combined_train, SYM_H_FEATURE_IDX)
     val_normal_dataset = SpaceWeatherDataset(val_normal_ds, SYM_H_FEATURE_IDX)
-    val_storm_dataset = SpaceWeatherDataset(val_storm_ds, SYM_H_FEATURE_IDX)
 
     train_loader = DataLoader(
         train_dataset, batch_size=batch_size, shuffle=True,
@@ -283,12 +286,8 @@ def load_partitioned_dataloaders(
         val_normal_dataset, batch_size=batch_size * 2, shuffle=False,
         num_workers=num_workers, pin_memory=True
     )
-    val_storm_loader = DataLoader(
-        val_storm_dataset, batch_size=batch_size * 2, shuffle=False,
-        num_workers=num_workers, pin_memory=True
-    )
 
-    return train_loader, val_normal_loader, val_storm_loader
+    return train_loader, val_normal_loader
 
 
 # ==============================================================================
@@ -300,13 +299,16 @@ def objective(
     args: argparse.Namespace,
     train_loader: DataLoader,
     val_normal_loader: DataLoader,
-    val_storm_loader: DataLoader,
-    device: torch.device
+    val_storm_loader: Optional[DataLoader] = None,
+    device: Optional[torch.device] = None
 ) -> float:
     """
-    Evaluates a single trial configuration across quiet and storm validation splits.
-    Minimizes: L_comp = 0.5 * L_normal + 0.5 * L_storm
+    Evaluates a single trial configuration across quiet validation split.
+    Enforces scientific holdout: optimizes strictly on val-normal without touching
+    the unseen test-storm or test-normal evaluation benchmarks.
     """
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # -------------------------------------------------------------------------
     # 1. Sample Hyperparameters from Search Space
     # -------------------------------------------------------------------------
@@ -391,7 +393,7 @@ def objective(
 
             train_loss_acc += loss.item()
 
-        # Validation on contiguous quiet-time test blocks
+        # Validation on contiguous quiet-time validation blocks (val-normal)
         model.eval()
         val_normal_loss = 0.0
         with torch.no_grad():
@@ -404,30 +406,32 @@ def objective(
                 val_normal_loss += loss.item()
         val_normal_loss /= len(val_normal_loader)
 
-        # Validation on contiguous held-out geomagnetic storm period
+        # Optional diagnostic logging if val_storm_loader is provided
         val_storm_loss = 0.0
-        with torch.no_grad():
-            for x_b, y_b in val_storm_loader:
-                x_b = x_b.to(device, non_blocking=True)
-                y_b = y_b.to(device, non_blocking=True)
-                with torch.amp.autocast('cuda', dtype=torch.bfloat16, enabled=torch.cuda.is_available()):
-                    logits = model(x_b)
-                    loss = criterion(logits, y_b, inputs=x_b)
-                val_storm_loss += loss.item()
-        val_storm_loss /= len(val_storm_loader)
+        if val_storm_loader is not None:
+            with torch.no_grad():
+                for x_b, y_b in val_storm_loader:
+                    x_b = x_b.to(device, non_blocking=True)
+                    y_b = y_b.to(device, non_blocking=True)
+                    with torch.amp.autocast('cuda', dtype=torch.bfloat16, enabled=torch.cuda.is_available()):
+                        logits = model(x_b)
+                        loss = criterion(logits, y_b, inputs=x_b)
+                    val_storm_loss += loss.item()
+            val_storm_loss /= len(val_storm_loader)
 
-        # Composite Storm-Resilient Pareto Objective
-        composite_loss = 0.5 * val_normal_loss + 0.5 * val_storm_loss
-        best_composite_loss = min(best_composite_loss, composite_loss)
+        # Scientific holdout: HPO tunes hyperparameters against val-normal only
+        target_val_loss = val_normal_loss
+        best_composite_loss = min(best_composite_loss, target_val_loss)
 
         # Report to Optuna for ASHA / Median Pruning
-        trial.report(composite_loss, step=epoch)
+        trial.report(target_val_loss, step=epoch)
         if trial.should_prune():
             raise optuna.exceptions.TrialPruned()
 
     # Log metrics to trial attributes
     trial.set_user_attr("val_normal_loss", val_normal_loss)
-    trial.set_user_attr("val_storm_loss", val_storm_loss)
+    if val_storm_loader is not None:
+        trial.set_user_attr("val_storm_loss", val_storm_loss)
     trial.set_user_attr("num_params", sum(p.numel() for p in model.parameters()))
 
     return best_composite_loss
@@ -473,7 +477,7 @@ def main():  # pragma: no cover
 
     # Load shared dataloaders
     print(f"[INFO] Loading datasets from: {args.data_dir}")
-    train_loader, val_normal_loader, val_storm_loader = load_partitioned_dataloaders(
+    train_loader, val_normal_loader = load_partitioned_dataloaders(
         args.data_dir, batch_size=args.batch_size
     )
 
@@ -495,9 +499,9 @@ def main():  # pragma: no cover
     print(f"[INFO] Optuna study '{args.study_name}' connected to storage '{args.storage}'")
     print(f"[INFO] Executing {args.n_trials} trials...")
 
-    # Execute optimization
+    # Execute optimization (tunes on val-normal; unseen test-storm and test-normal held out)
     study.optimize(
-        lambda trial: objective(trial, args, train_loader, val_normal_loader, val_storm_loader, device),
+        lambda trial: objective(trial, args, train_loader, val_normal_loader, device=device),
         n_trials=args.n_trials
     )
 
@@ -507,9 +511,10 @@ def main():  # pragma: no cover
     print("  SPACE PHYSICS HYPERPARAMETER SWEEP COMPLETE")
     print("=" * 80)
     print(f"  Best Trial Number:          #{best.number}")
-    print(f"  Best Composite Loss:        {best.value:.4f}")
-    print(f"  Quiet Normal Loss:          {best.user_attrs.get('val_normal_loss', 0.0):.4f}")
-    print(f"  Held-Out Storm Loss:        {best.user_attrs.get('val_storm_loss', 0.0):.4f}")
+    print(f"  Best Validation Loss:       {best.value:.4f}")
+    print(f"  Validation Loss:            {best.user_attrs.get('val_normal_loss', 0.0):.4f}")
+    if 'val_storm_loss' in best.user_attrs:
+        print(f"  Diagnostic Storm Loss:      {best.user_attrs.get('val_storm_loss', 0.0):.4f}")
     print(f"  Parameter Count:            {best.user_attrs.get('num_params', 0):,}")
     print("\n  Winning Hyperparameters:")
     for k, v in best.params.items():

@@ -45,6 +45,19 @@ class TestConstants(unittest.TestCase):
         self.assertAlmostEqual(float(norms["Kp_index"](45)), 0.0)
         self.assertAlmostEqual(float(norms["Kp_index"](90)), 1.0)
 
+        # 6. Orthogonal Cosine Coordinates (resolving east/west & noon/midnight ambiguities)
+        for cos_key in ["GCLON_cos", "XXLON_cos"]:
+            self.assertIn(cos_key, norms)
+            self.assertAlmostEqual(float(norms[cos_key](0.0)), 1.0)
+            self.assertAlmostEqual(float(norms[cos_key](90.0)), 0.0, places=5)
+            self.assertAlmostEqual(float(norms[cos_key](180.0)), -1.0)
+
+        self.assertIn("GMLT_cos", norms)
+        self.assertAlmostEqual(float(norms["GMLT_cos"](0.0)), 1.0)
+        self.assertAlmostEqual(float(norms["GMLT_cos"](6.0)), 0.0, places=5)
+        self.assertAlmostEqual(float(norms["GMLT_cos"](12.0)), -1.0)
+        self.assertAlmostEqual(float(norms["GMLT_cos"](18.0)), 0.0, places=5)
+
 
 if __name__ == "__main__":
     unittest.main()

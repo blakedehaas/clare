@@ -10,4 +10,8 @@ NORMALIZATIONS = {
     'XXLAT': lambda x: np.array(x, dtype=np.float32) / 90,  # Scale latitude to [-1, 1]
     'XXLON': lambda x: np.sin(np.deg2rad(np.array(x, dtype=np.float32))),  # Convert longitude to sine
     "Kp_index": lambda x: np.array(x, dtype=np.float32) / 45 - 1,  # Scale Kp index (0-90) to [-1, 1]
+    # Orthogonal cosine pairs resolving noon/midnight and east/west topological ambiguities
+    'GCLON_cos': lambda x: np.cos(np.deg2rad(np.array(x, dtype=np.float32))),
+    'XXLON_cos': lambda x: np.cos(np.deg2rad(np.array(x, dtype=np.float32))),
+    'GMLT_cos': lambda x: np.cos(np.array(x, dtype=np.float32) * np.pi / 12),
 }
