@@ -56,6 +56,11 @@ except ImportError:
 
 from physics_loss import UnifiedPhysicsLoss
 
+try:
+    from train_v2 import TEMPEST
+except ImportError:
+    TEMPEST = None
+
 
 # ==============================================================================
 # 1. 156-FEATURE TELEMETRY SPECIFICATION
@@ -250,8 +255,9 @@ class SpaceWeatherDataset(Dataset):
 def load_partitioned_dataloaders(
     data_dir: str,
     batch_size: int = 512,
-    num_workers: int = 2
-) -> Tuple[DataLoader, DataLoader]:
+    num_workers: int = 2,
+    include_storm: bool = False
+) -> Any:
     """
     Loads train_chunks and val-normal with pinned memory.
     Enforces scientific holdout: unseen test-normal and test-storm are strictly
@@ -259,8 +265,11 @@ def load_partitioned_dataloaders(
     """
     train_dir = os.path.join(data_dir, "train_chunks")
     val_normal_dir = os.path.join(data_dir, "val-normal")
+    val_storm_dir = os.path.join(data_dir, "val-storm")
     if not os.path.exists(val_normal_dir):
         val_normal_dir = os.path.join(data_dir, "test-normal")
+    if not os.path.exists(val_storm_dir):
+        val_storm_dir = os.path.join(data_dir, "test-storm")
 
     if not os.path.exists(train_dir):
         raise FileNotFoundError(f"Train directory not found: {train_dir}")
@@ -287,11 +296,20 @@ def load_partitioned_dataloaders(
         num_workers=num_workers, pin_memory=True
     )
 
+    if include_storm and os.path.exists(val_storm_dir):
+        val_storm_ds = datasets.Dataset.load_from_disk(val_storm_dir)
+        val_storm_dataset = SpaceWeatherDataset(val_storm_ds, SYM_H_FEATURE_IDX)
+        val_storm_loader = DataLoader(
+            val_storm_dataset, batch_size=batch_size * 2, shuffle=False,
+            num_workers=num_workers, pin_memory=True
+        )
+        return train_loader, val_normal_loader, val_storm_loader
+
     return train_loader, val_normal_loader
 
 
 # ==============================================================================
-# 4. OBJECTIVE FUNCTION FOR OPTUNA
+# 4. OBJECTIVE FUNCTION FOR OPTUNA (Multi-Fidelity & Physics Guided)
 # ==============================================================================
 
 def objective(
@@ -303,25 +321,58 @@ def objective(
     device: Optional[torch.device] = None
 ) -> float:
     """
-    Evaluates a single trial configuration across quiet validation split.
-    Enforces scientific holdout: optimizes strictly on val-normal without touching
-    the unseen test-storm or test-normal evaluation benchmarks.
+    Evaluates a single trial configuration using Multi-Fidelity Hyperband Pruning.
+    Enforces scientific holdout: optimizes strictly on val-normal (and optional val-storm)
+    without touching unseen test-normal or test-storm final evaluation benchmarks.
     """
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
     # -------------------------------------------------------------------------
     # 1. Sample Hyperparameters from Search Space
     # -------------------------------------------------------------------------
-    # Architecture dimensions
-    d_model = trial.suggest_categorical("d_model", [128, 256, 384])
-    num_layers = trial.suggest_int("num_layers", 3, 7)
-    use_moe = trial.suggest_categorical("use_moe", [True, False])
-    num_experts = trial.suggest_categorical("num_experts", [4, 8]) if use_moe else 1
-    top_k = 2 if use_moe else 1
-    dropout = trial.suggest_float("dropout", 0.05, 0.25)
+    arch_family = trial.suggest_categorical("arch_family", ["tempest", "swiglu_moe"]) if TEMPEST is not None else "swiglu_moe"
+
+    if arch_family == "tempest":
+        d_model = trial.suggest_categorical("d_model", [128, 256, 384])
+        expert_dim = trial.suggest_categorical("expert_dim", [256, 512, 768])
+        num_experts = trial.suggest_categorical("num_experts", [4, 8])
+        top_k = trial.suggest_categorical("top_k", [1, 2])
+        n_layers = trial.suggest_int("n_layers", 2, 5)
+        n_hc = trial.suggest_categorical("n_hc", [2, 4])
+        dropout = trial.suggest_float("dropout", 0.05, 0.25)
+
+        model = TEMPEST(
+            num_features=len(INPUT_COLUMNS),
+            d_model=d_model,
+            expert_dim=expert_dim,
+            num_experts=num_experts,
+            top_k=top_k,
+            n_layers=n_layers,
+            n_hc=n_hc,
+            vocab_size=NUM_CLASSES
+        ).to(device)
+    else:
+        d_model = trial.suggest_categorical("d_model", [128, 256, 384])
+        num_layers = trial.suggest_int("num_layers", 3, 7)
+        use_moe = trial.suggest_categorical("use_moe", [True, False])
+        num_experts = trial.suggest_categorical("num_experts", [4, 8]) if use_moe else 1
+        top_k = 2 if use_moe else 1
+        dropout = trial.suggest_float("dropout", 0.05, 0.25)
+
+        model = DynamicSpacePhysicsModel(
+            input_dim=len(INPUT_COLUMNS),
+            output_dim=NUM_CLASSES,
+            d_model=d_model,
+            num_layers=num_layers,
+            num_experts=num_experts,
+            top_k=top_k,
+            dropout=dropout,
+            use_moe=use_moe
+        ).to(device)
 
     # Optimization dimensions
-    max_lr = trial.suggest_float("max_lr", 3e-4, 2e-3, log=True)
+    max_lr = trial.suggest_float("max_lr", 2e-4, 2e-3, log=True)
     weight_decay = trial.suggest_float("weight_decay", 1e-5, 1e-2, log=True)
 
     # Unified Physics Loss dimensions
@@ -329,20 +380,6 @@ def objective(
     huber_weight = trial.suggest_float("huber_weight", 0.05, 0.50)
     storm_alpha = trial.suggest_float("storm_alpha", 0.5, 3.0)
     huber_delta = trial.suggest_float("huber_delta", 250.0, 750.0)
-
-    # -------------------------------------------------------------------------
-    # 2. Instantiate Model, Loss & Optimizer
-    # -------------------------------------------------------------------------
-    model = DynamicSpacePhysicsModel(
-        input_dim=len(INPUT_COLUMNS),
-        output_dim=NUM_CLASSES,
-        d_model=d_model,
-        num_layers=num_layers,
-        num_experts=num_experts,
-        top_k=top_k,
-        dropout=dropout,
-        use_moe=use_moe
-    ).to(device)
 
     criterion = UnifiedPhysicsLoss(
         vocab_size=NUM_CLASSES,
@@ -358,17 +395,18 @@ def objective(
         model.parameters(),
         lr=max_lr,
         weight_decay=weight_decay,
-        fused=torch.cuda.is_available()
+        fused=(torch.cuda.is_available() and device.type == "cuda")
     )
 
-    epochs = args.epochs_per_trial
+    epochs = getattr(args, "epochs_per_trial", 5)
     total_steps = epochs * len(train_loader)
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=total_steps, eta_min=max_lr * 0.01)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max(1, total_steps), eta_min=max_lr * 0.01)
 
-    scaler = torch.amp.GradScaler('cuda', enabled=torch.cuda.is_available())
+    scaler = torch.amp.GradScaler('cuda', enabled=(torch.cuda.is_available() and device.type == "cuda"))
 
-    # Training and validation loop with median pruning
-    best_composite_loss = float("inf")
+    # Training and validation loop with Multi-Fidelity Hyperband / Median Pruning
+    best_target_loss = float("inf")
+    bin_centers = torch.linspace(50.0, 14950.0, NUM_CLASSES, device=device)
 
     for epoch in range(1, epochs + 1):
         model.train()
@@ -380,7 +418,7 @@ def objective(
 
             optimizer.zero_grad(set_to_none=True)
 
-            with torch.amp.autocast('cuda', dtype=torch.bfloat16, enabled=torch.cuda.is_available()):
+            with torch.amp.autocast('cuda', dtype=torch.bfloat16, enabled=(torch.cuda.is_available() and device.type == "cuda")):
                 logits = model(x_b)
                 loss = criterion(logits, y_b, inputs=x_b)
 
@@ -396,45 +434,74 @@ def objective(
         # Validation on contiguous quiet-time validation blocks (val-normal)
         model.eval()
         val_normal_loss = 0.0
+        val_normal_sq_err = 0.0
+        val_normal_count = 0
         with torch.no_grad():
             for x_b, y_b in val_normal_loader:
                 x_b = x_b.to(device, non_blocking=True)
                 y_b = y_b.to(device, non_blocking=True)
-                with torch.amp.autocast('cuda', dtype=torch.bfloat16, enabled=torch.cuda.is_available()):
+                with torch.amp.autocast('cuda', dtype=torch.bfloat16, enabled=(torch.cuda.is_available() and device.type == "cuda")):
                     logits = model(x_b)
                     loss = criterion(logits, y_b, inputs=x_b)
                 val_normal_loss += loss.item()
-        val_normal_loss /= len(val_normal_loader)
 
-        # Optional diagnostic logging if val_storm_loader is provided
+                probs = F.softmax(logits, dim=-1)
+                pred_te = (probs * bin_centers).sum(dim=-1)
+                true_te = y_b.float() * 100.0 + 50.0
+                val_normal_sq_err += ((pred_te - true_te) ** 2).sum().item()
+                val_normal_count += len(y_b)
+
+        val_normal_loss /= max(1, len(val_normal_loader))
+        val_normal_rmse = math.sqrt(val_normal_sq_err / max(1, val_normal_count))
+
+        # Optional storm validation
         val_storm_loss = 0.0
+        val_storm_rmse = 0.0
+        val_storm_sq_err = 0.0
+        val_storm_count = 0
         if val_storm_loader is not None:
             with torch.no_grad():
                 for x_b, y_b in val_storm_loader:
                     x_b = x_b.to(device, non_blocking=True)
                     y_b = y_b.to(device, non_blocking=True)
-                    with torch.amp.autocast('cuda', dtype=torch.bfloat16, enabled=torch.cuda.is_available()):
+                    with torch.amp.autocast('cuda', dtype=torch.bfloat16, enabled=(torch.cuda.is_available() and device.type == "cuda")):
                         logits = model(x_b)
                         loss = criterion(logits, y_b, inputs=x_b)
                     val_storm_loss += loss.item()
-            val_storm_loss /= len(val_storm_loader)
 
-        # Scientific holdout: HPO tunes hyperparameters against val-normal only
-        target_val_loss = val_normal_loss
-        best_composite_loss = min(best_composite_loss, target_val_loss)
+                    probs = F.softmax(logits, dim=-1)
+                    pred_te = (probs * bin_centers).sum(dim=-1)
+                    true_te = y_b.float() * 100.0 + 50.0
+                    val_storm_sq_err += ((pred_te - true_te) ** 2).sum().item()
+                    val_storm_count += len(y_b)
 
-        # Report to Optuna for ASHA / Median Pruning
+            val_storm_loss /= max(1, len(val_storm_loader))
+            val_storm_rmse = math.sqrt(val_storm_sq_err / max(1, val_storm_count))
+
+        # Scalarized Composite Objective: balances quiet precision and storm fidelity
+        storm_w = getattr(args, "storm_weight", 0.0)
+        if val_storm_loader is not None and storm_w > 0.0:
+            target_val_loss = (1.0 - storm_w) * val_normal_loss + storm_w * val_storm_loss
+        else:
+            target_val_loss = val_normal_loss
+
+        best_target_loss = min(best_target_loss, target_val_loss)
+
+        # Multi-fidelity report & pruning (Hyperband / Median)
         trial.report(target_val_loss, step=epoch)
         if trial.should_prune():
             raise optuna.exceptions.TrialPruned()
 
-    # Log metrics to trial attributes
-    trial.set_user_attr("val_normal_loss", val_normal_loss)
+    # Log metrics to trial user attributes
+    trial.set_user_attr("val_normal_loss", float(val_normal_loss))
+    trial.set_user_attr("val_normal_rmse_k", float(val_normal_rmse))
     if val_storm_loader is not None:
-        trial.set_user_attr("val_storm_loss", val_storm_loss)
-    trial.set_user_attr("num_params", sum(p.numel() for p in model.parameters()))
+        trial.set_user_attr("val_storm_loss", float(val_storm_loss))
+        trial.set_user_attr("val_storm_rmse_k", float(val_storm_rmse))
+    trial.set_user_attr("num_params", int(sum(p.numel() for p in model.parameters())))
+    trial.set_user_attr("arch_family", str(arch_family))
 
-    return best_composite_loss
+    return best_target_loss
 
 
 # ==============================================================================
@@ -442,27 +509,36 @@ def objective(
 # ==============================================================================
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Distributed Space Physics Bayesian HPO Sweep")
-    parser.add_argument("--n_trials", type=int, default=30, help="Number of trials for this worker")
-    parser.add_argument("--epochs_per_trial", type=int, default=5, help="Training epochs per trial")
+    parser = argparse.ArgumentParser(description="Distributed Space Physics Bayesian & Multi-Fidelity HPO Sweep")
+    parser.add_argument("--n_trials", type=int, default=150, help="Number of trials for this worker")
+    parser.add_argument("--epochs_per_trial", type=int, default=27, help="Training epochs per trial (max resource)")
     parser.add_argument("--batch_size", type=int, default=512, help="Mini-batch size")
-    parser.add_argument("--storage", type=str, default="sqlite:///sweep_optuna.db", help="Optuna RDBMS storage URI")
-    parser.add_argument("--study_name", type=str, default="clare_space_physics_hpo", help="Study identifier")
+    parser.add_argument("--storage", type=str, default="sqlite:///sweep_optuna.db", help="Optuna RDBMS / Journal storage URI")
+    parser.add_argument("--study_name", type=str, default="tempest_space_physics_sweep", help="Study identifier")
     parser.add_argument("--data_dir", type=str, default="dataset/processed_dataset_01_31_storm", help="Dataset directory")
     parser.add_argument("--output_dir", type=str, default="checkpoints/sweep_results", help="Results directory")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
+    parser.add_argument("--pruner", type=str, default="hyperband", choices=["hyperband", "median", "none"], help="Pruner algorithm")
+    parser.add_argument("--min_resource", type=int, default=3, help="Minimum epochs before pruning in Hyperband")
+    parser.add_argument("--reduction_factor", type=int, default=3, help="Reduction factor for successive halving rungs")
+    parser.add_argument("--storm_weight", type=float, default=0.25, help="Weight for storm loss in composite objective [0.0, 1.0]")
     return parser.parse_args()
 
 
 def create_optuna_storage(storage_spec: str):
-    """Instantiates an Optuna storage backend, defaulting to lock-free JournalFileStorage on shared cluster filesystems."""
+    """Instantiates an Optuna storage backend, defaulting to lock-free JournalFileBackend on shared cluster filesystems."""
     if storage_spec.endswith(".log") or storage_spec.startswith("journal://"):
-        from optuna.storages import JournalStorage, JournalFileStorage
         journal_path = storage_spec.replace("journal://", "")
         journal_dir = os.path.dirname(os.path.abspath(journal_path))
         if journal_dir:
             os.makedirs(journal_dir, exist_ok=True)
-        return JournalStorage(JournalFileStorage(journal_path))
+        try:
+            from optuna.storages import JournalStorage
+            from optuna.storages.journal import JournalFileBackend
+            return JournalStorage(JournalFileBackend(journal_path))
+        except (ImportError, AttributeError):
+            from optuna.storages import JournalStorage, JournalFileStorage
+            return JournalStorage(JournalFileStorage(journal_path))
     return storage_spec
 
 
@@ -477,14 +553,35 @@ def main():  # pragma: no cover
 
     # Load shared dataloaders
     print(f"[INFO] Loading datasets from: {args.data_dir}")
-    train_loader, val_normal_loader = load_partitioned_dataloaders(
-        args.data_dir, batch_size=args.batch_size
+    dl_result = load_partitioned_dataloaders(
+        args.data_dir, batch_size=args.batch_size, include_storm=True
     )
+    if isinstance(dl_result, tuple) and len(dl_result) == 3:
+        train_loader, val_normal_loader, val_storm_loader = dl_result
+    else:
+        train_loader, val_normal_loader = dl_result
+        val_storm_loader = None
 
-    # Instantiate Optuna Study with Lustre-safe storage and median pruning
-    sampler = TPESampler(seed=args.seed, multivariate=True)
-    pruner = MedianPruner(n_startup_trials=5, n_warmup_steps=2)
+    # Multi-fidelity Pruner configuration
+    if args.pruner == "hyperband":
+        from optuna.pruners import HyperbandPruner
+        pruner = HyperbandPruner(
+            min_resource=args.min_resource,
+            max_resource=args.epochs_per_trial,
+            reduction_factor=args.reduction_factor
+        )
+        print(f"[INFO] Using Multi-Fidelity HyperbandPruner (min={args.min_resource}, max={args.epochs_per_trial}, factor={args.reduction_factor})")
+    elif args.pruner == "median":
+        from optuna.pruners import MedianPruner
+        pruner = MedianPruner(n_startup_trials=5, n_warmup_steps=2)
+        print(f"[INFO] Using MedianPruner (warmup=2)")
+    else:
+        from optuna.pruners import NopPruner
+        pruner = NopPruner()
+        print(f"[INFO] Pruning disabled (NopPruner)")
 
+    # Multivariate Tree-structured Parzen Estimator (TPE)
+    sampler = TPESampler(seed=args.seed, multivariate=True, group=True)
     optuna_storage = create_optuna_storage(args.storage)
 
     study = optuna.create_study(
@@ -499,9 +596,9 @@ def main():  # pragma: no cover
     print(f"[INFO] Optuna study '{args.study_name}' connected to storage '{args.storage}'")
     print(f"[INFO] Executing {args.n_trials} trials...")
 
-    # Execute optimization (tunes on val-normal; unseen test-storm and test-normal held out)
+    # Execute optimization (tunes on val-normal / val-storm; unseen test-storm and test-normal held out)
     study.optimize(
-        lambda trial: objective(trial, args, train_loader, val_normal_loader, device=device),
+        lambda trial: objective(trial, args, train_loader, val_normal_loader, val_storm_loader=val_storm_loader, device=device),
         n_trials=args.n_trials
     )
 
@@ -511,27 +608,102 @@ def main():  # pragma: no cover
     print("  SPACE PHYSICS HYPERPARAMETER SWEEP COMPLETE")
     print("=" * 80)
     print(f"  Best Trial Number:          #{best.number}")
-    print(f"  Best Validation Loss:       {best.value:.4f}")
-    print(f"  Validation Loss:            {best.user_attrs.get('val_normal_loss', 0.0):.4f}")
+    print(f"  Best Composite Loss:        {best.value:.4f}")
+    print(f"  Validation Loss (quiet):    {best.user_attrs.get('val_normal_loss', 0.0):.4f}")
+    print(f"  Validation RMSE (quiet):    {best.user_attrs.get('val_normal_rmse_k', 0.0):.1f} K")
     if 'val_storm_loss' in best.user_attrs:
-        print(f"  Diagnostic Storm Loss:      {best.user_attrs.get('val_storm_loss', 0.0):.4f}")
+        print(f"  Validation Loss (storm):    {best.user_attrs.get('val_storm_loss', 0.0):.4f}")
+        print(f"  Validation RMSE (storm):    {best.user_attrs.get('val_storm_rmse_k', 0.0):.1f} K")
+    print(f"  Architecture Family:        {best.user_attrs.get('arch_family', 'N/A')}")
     print(f"  Parameter Count:            {best.user_attrs.get('num_params', 0):,}")
     print("\n  Winning Hyperparameters:")
     for k, v in best.params.items():
         print(f"    - {k:22s}: {v}")
     print("=" * 80 + "\n")
 
+    # Pareto-Optimal Frontier Analysis
+    completed_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
+    has_storm_attrs = any("val_storm_loss" in t.user_attrs for t in completed_trials)
+    pareto_trials = []
+
+    if has_storm_attrs and len(completed_trials) > 0:
+        for t1 in completed_trials:
+            q1 = t1.user_attrs.get("val_normal_loss", float("inf"))
+            s1 = t1.user_attrs.get("val_storm_loss", float("inf"))
+            dominated = False
+            for t2 in completed_trials:
+                if t1.number == t2.number:
+                    continue
+                q2 = t2.user_attrs.get("val_normal_loss", float("inf"))
+                s2 = t2.user_attrs.get("val_storm_loss", float("inf"))
+                if q2 <= q1 and s2 <= s1 and (q2 < q1 or s2 < s1):
+                    dominated = True
+                    break
+            if not dominated:
+                pareto_trials.append({
+                    "trial_number": t1.number,
+                    "val_normal_loss": q1,
+                    "val_storm_loss": s1,
+                    "val_normal_rmse_k": t1.user_attrs.get("val_normal_rmse_k", 0.0),
+                    "val_storm_rmse_k": t1.user_attrs.get("val_storm_rmse_k", 0.0),
+                    "params": t1.params
+                })
+
     # Save summary report JSON
     results_path = os.path.join(args.output_dir, "hpo_sweep_summary.json")
+    summary_data = {
+        "best_trial_number": best.number,
+        "best_composite_loss": best.value,
+        "best_params": best.params,
+        "best_user_attrs": best.user_attrs,
+        "total_trials": len(study.trials),
+        "completed_trials": len(completed_trials),
+        "pruned_trials": len([t for t in study.trials if t.state == optuna.trial.TrialState.PRUNED]),
+        "pareto_optimal_trials": pareto_trials
+    }
     with open(results_path, "w") as f:
-        json.dump({
-            "best_trial_number": best.number,
-            "best_composite_loss": best.value,
-            "best_params": best.params,
-            "best_user_attrs": best.user_attrs,
-            "total_trials": len(study.trials)
-        }, f, indent=2)
-    print(f"[INFO] Saved sweep summary to: {results_path}")
+        json.dump(summary_data, f, indent=2)
+    print(f"[INFO] Saved comprehensive sweep summary to: {results_path}")
+
+    # Generate Optuna Publication Visualizations
+    try:
+        import matplotlib.pyplot as plt
+        if has_storm_attrs and len(completed_trials) > 1:
+            fig, ax = plt.subplots(figsize=(8, 6), dpi=300)
+            q_losses = [t.user_attrs.get("val_normal_loss", 0.0) for t in completed_trials]
+            s_losses = [t.user_attrs.get("val_storm_loss", 0.0) for t in completed_trials]
+            ax.scatter(q_losses, s_losses, c="royalblue", alpha=0.6, s=35, label="Completed Trials")
+
+            if pareto_trials:
+                pq = [pt["val_normal_loss"] for pt in pareto_trials]
+                ps = [pt["val_storm_loss"] for pt in pareto_trials]
+                sort_p = sorted(zip(pq, ps))
+                ax.plot([x[0] for x in sort_p], [x[1] for x in sort_p], color="crimson", linestyle="--", linewidth=2.0, marker="o", label="Pareto Frontier")
+
+            ax.set_xlabel("Quiet Validation Loss (val-normal)", fontweight="bold")
+            ax.set_ylabel("Storm Validation Loss (val-storm)", fontweight="bold")
+            ax.set_title("TEMPEST HPO: Quiet vs. Storm Validation Pareto Frontier", fontweight="bold")
+            ax.grid(True, linestyle="--", alpha=0.4)
+            ax.legend(frameon=True)
+            pareto_fig_path = os.path.join(args.output_dir, "optuna_pareto_front.png")
+            plt.tight_layout()
+            plt.savefig(pareto_fig_path, dpi=300)
+            plt.close(fig)
+            print(f"[INFO] Saved Pareto Frontier plot to: {pareto_fig_path}")
+
+        if len(completed_trials) >= 5:
+            try:
+                import optuna.visualization.matplotlib as optuna_vis
+                fig = optuna_vis.plot_param_importances(study)
+                imp_fig_path = os.path.join(args.output_dir, "optuna_param_importances.png")
+                plt.tight_layout()
+                plt.savefig(imp_fig_path, dpi=300)
+                plt.close(plt.gcf())
+                print(f"[INFO] Saved Parameter Importances plot to: {imp_fig_path}")
+            except Exception as e:
+                print(f"[WARNING] Could not plot parameter importances: {e}")
+    except Exception as e:
+        print(f"[WARNING] Could not generate Optuna visualization plots: {e}")
 
 
 if __name__ == "__main__":

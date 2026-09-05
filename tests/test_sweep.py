@@ -114,7 +114,7 @@ class TestSweep(unittest.TestCase):
         from sweep import objective
         import argparse
 
-        args = argparse.Namespace(epochs_per_trial=1)
+        args = argparse.Namespace(epochs_per_trial=1, storm_weight=0.25)
         study = optuna.create_study()
         trial = study.ask()
 
@@ -129,6 +129,26 @@ class TestSweep(unittest.TestCase):
             device=torch.device("cpu")
         )
         self.assertIsInstance(val_loss, float)
+        self.assertIn("val_normal_loss", trial.user_attrs)
+        self.assertIn("val_normal_rmse_k", trial.user_attrs)
+        self.assertIn("num_params", trial.user_attrs)
+        self.assertIn("arch_family", trial.user_attrs)
+
+    def test_parse_args_defaults(self):
+        """Tests parse_args default parameter values."""
+        import sys
+        old_argv = sys.argv
+        sys.argv = ["sweep.py"]
+        try:
+            args = parse_args()
+            self.assertEqual(args.n_trials, 150)
+            self.assertEqual(args.epochs_per_trial, 27)
+            self.assertEqual(args.pruner, "hyperband")
+            self.assertEqual(args.min_resource, 3)
+            self.assertEqual(args.reduction_factor, 3)
+            self.assertEqual(args.storm_weight, 0.25)
+        finally:
+            sys.argv = old_argv
 
 
 if __name__ == "__main__":

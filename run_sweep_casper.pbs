@@ -1,8 +1,8 @@
 #!/bin/bash
-#PBS -N clare_hpo_sweep
+#PBS -N tempest_hpo_sweep
 #PBS -A UCUL0008
 #PBS -l select=1:ncpus=8:ngpus=1:mem=64GB
-#PBS -l walltime=12:00:00
+#PBS -l walltime=24:00:00
 #PBS -q casper
 #PBS -j oe
 #PBS -m abe
@@ -10,7 +10,11 @@
 
 # ==============================================================================
 # NCAR Casper Supercomputing PBS Batch Script:
-# Distributed Space Physics Bayesian Hyperparameter Optimization Sweep (Optuna)
+# Distributed Space Physics Multi-Fidelity Bayesian HPO Sweep (Optuna + BOHB)
+# ==============================================================================
+# To run as a multi-GPU parallel worker array across 4 nodes:
+#   qsub -J 1-4 run_sweep_casper.pbs
+# All workers will dynamically coordinate via the shared GLADE journal log!
 # ==============================================================================
 
 # Navigate to the project directory from which the job was submitted
@@ -53,26 +57,32 @@ echo ""
 
 # Experiment tracking configuration
 export WANDB_MODE=online
-export WANDB_PROJECT=clare_space_physics_hpo
+export WANDB_PROJECT=tempest_space_physics_hpo
 
 # Shared Optuna Journal Storage on NCAR GLADE Scratch
-# JournalFileStorage uses an append-only log without POSIX SQLite locks, avoiding Lustre file locking crashes.
-SCRATCH_DIR="/glade/derecho/scratch/$USER/clare_hpo"
+# JournalFileBackend uses an append-only log without POSIX SQLite locks, avoiding Lustre file locking crashes.
+SCRATCH_DIR="/glade/derecho/scratch/$USER/tempest_hpo"
 mkdir -p "$SCRATCH_DIR"
 OPTUNA_STORAGE="${SCRATCH_DIR}/optuna_journal.log"
 
 echo "============================================================"
-echo "[INFO] Launching Distributed Bayesian HPO Sweep (Optuna)"
+echo "[INFO] Launching Distributed Multi-Fidelity HPO Sweep (TEMPEST)"
 echo "[INFO] Storage URI:     $OPTUNA_STORAGE"
-echo "[INFO] Study Name:      clare_space_physics_sweep"
+echo "[INFO] Study Name:      tempest_space_physics_sweep"
+echo "[INFO] Max Budget:      27 epochs / trial (Hyperband 3-rung)"
+echo "[INFO] Target Trials:   150 trials / worker"
 echo "============================================================"
 
 python sweep.py \
-    --n_trials 30 \
-    --epochs_per_trial 5 \
+    --n_trials 150 \
+    --epochs_per_trial 27 \
+    --pruner hyperband \
+    --min_resource 3 \
+    --reduction_factor 3 \
+    --storm_weight 0.25 \
     --batch_size 512 \
     --storage "$OPTUNA_STORAGE" \
-    --study_name "clare_space_physics_sweep" \
+    --study_name "tempest_space_physics_sweep" \
     --data_dir "dataset/processed_dataset_01_31_storm" \
     --output_dir "checkpoints/sweep_results" \
     --seed 42
