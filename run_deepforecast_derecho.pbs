@@ -36,14 +36,16 @@ nvidia-smi
 export WANDB_MODE=online
 export OMP_NUM_THREADS=8
 
-# Execute High-Performance DeepSeek-V4 Training on NVIDIA H100 GPU
-python train_deepforecast.py \
-    --epochs 10 \
-    --batch_size 128 \
+# Execute High-Performance TEMPEST Training on NVIDIA H100 GPU
+python train_v2.py \
+    --num_epochs 10 \
+    --batch_size 512 \
     --d_model 256 \
+    --expert_dim 512 \
     --n_layers 6 \
     --num_experts 8 \
     --top_k 2 \
-    --lr 2e-4
+    --lr 2e-4 \
+    --model_name "tempest_derecho_h100"
 
 echo "DeepSeek-V4 Training completed successfully at: $(date)"

@@ -128,7 +128,7 @@ TEMPEST accepts a standardized 156-dimensional feature vector grounded in magnet
 | :--- | :---: | :--- | :--- |
 | **Spatial Coordinates** | 8 | Altitude ($h$), GCLAT, GCLON, ILAT ($\Lambda$), GLAT, GMLT, XXLAT, XXLON | Defines spacecraft position, magnetic flux tube geometry, invariant latitude, and local diurnal solar illumination. |
 | **Periodic Encodings** | 6 | $\cos/\sin(\text{GCLON})$, $\cos/\sin(\text{XXLON})$, $\cos/\sin(\text{GMLT})$ | Resolves $360^\circ$ and 24-hour circular discontinuities in longitude and Magnetic Local Time. |
-| **Auroral Electrojet ($AL$)** | 31 | $AL_0, AL_1, \dots, AL_{30}$ ($0$ to $3\text{ hours}$ in 6-min steps) | Tracks substorm particle injections, field-aligned currents (FACs), and ionospheric Joule heating. |
+| **Auroral Electrojet ($AL$)** | 31 | $AL_0, AL_1, \dots, AL_{30}$ ($0$ to $5\text{ hours}$ in 10-min steps) | Tracks substorm particle injections, field-aligned currents (FACs), and ionospheric Joule heating. |
 | **Symmetric Ring Current ($SYM\text{-}H$)** | 145 | $SYM\text{-}H_0, \dots, SYM\text{-}H_{144}$ ($0$ to $72\text{ hours}$ in 30-min steps) | Captures ring current buildup, storm main phase depression, and prolonged Coulomb thermalization during recovery. |
 | **Solar EUV Proxies** | 4 | $F_{10.7, \tau=0\mathrm{h}}, F_{10.7, \tau=24\mathrm{h}}, F_{10.7, \tau=48\mathrm{h}}, F_{10.7, \tau=72\mathrm{h}}$ | Quantifies solar extreme ultraviolet (EUV) photoionization driving the dayside ionospheric heat source. |
 | **Planetary Disturbance** | 1 | $Kp$ index | Measures global quasi-logarithmic geomagnetic planetary disturbance level. |
