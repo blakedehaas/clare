@@ -26,6 +26,10 @@ models_out/
 *.jpeg
 *.svg
 *.pdf
+!paper/figures/*.png
+!paper/figures/*.jpg
+!paper/figures/*.jpeg
+!paper/figures/*.pdf
 tests/test_output/
 
 # ------------------------------------------------------------------------------

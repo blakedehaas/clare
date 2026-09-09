@@ -51,19 +51,20 @@ def ensure_dir(path: str):
 
 def copy_core_checkpoints_figures(output_dir: str):
     """Copies pre-computed diagnostic figures from checkpoints/ to paper/figures/."""
-    mapping = {
-        "checkpoints/v2_epoch_loss_curve.png": os.path.join(output_dir, "epoch_loss_curve.png"),
-        "checkpoints/v2_epoch_test_loss_curve.png": os.path.join(output_dir, "epoch_test_loss_curve.png"),
-        "checkpoints/v2_sandwiched_mean_all_blocks.png": os.path.join(output_dir, "sandwiched_mean_all_blocks.png"),
-        "checkpoints/v2_sandwiched_median.png": os.path.join(output_dir, "sandwiched_median.png"),
-        "checkpoints/v2_sandwiched_best.png": os.path.join(output_dir, "sandwiched_best.png"),
-        "checkpoints/v2_sandwiched_worst.png": os.path.join(output_dir, "sandwiched_worst.png"),
-        "checkpoints/v2_sandwiched_random.png": os.path.join(output_dir, "sandwiched_random.png"),
-        "checkpoints/v2_test-normal_deviation_plot.png": os.path.join(output_dir, "test-normal_deviation_plot.png"),
-        "checkpoints/v2_test-normal_plot.png": os.path.join(output_dir, "test-normal_plot.png"),
-        "checkpoints/v2_plasmapause_transition.png": os.path.join(output_dir, "plasmapause_transition.png"),
-    }
-    for src, dst in mapping.items():
+    targets = [
+        ("epoch_loss_curve.png", "checkpoints/tempest_epoch_loss_curve.png"),
+        ("epoch_test_loss_curve.png", "checkpoints/tempest_epoch_test_loss_curve.png"),
+        ("sandwiched_mean_all_blocks.png", "checkpoints/tempest_sandwiched_mean_all_blocks.png"),
+        ("sandwiched_median.png", "checkpoints/tempest_sandwiched_median.png"),
+        ("sandwiched_best.png", "checkpoints/tempest_sandwiched_best.png"),
+        ("sandwiched_worst.png", "checkpoints/tempest_sandwiched_worst.png"),
+        ("sandwiched_random.png", "checkpoints/tempest_sandwiched_random.png"),
+        ("test-normal_deviation_plot.png", "checkpoints/tempest_test-normal_deviation_plot.png"),
+        ("test-normal_plot.png", "checkpoints/tempest_test-normal_plot.png"),
+        ("plasmapause_transition.png", "checkpoints/tempest_plasmapause_transition.png"),
+    ]
+    for target_name, src in targets:
+        dst = os.path.join(output_dir, target_name)
         if os.path.exists(src):
             shutil.copyfile(src, dst)
             print(f"[Copied] {src} -> {dst}")
@@ -83,7 +84,7 @@ def load_tempest_model(device: torch.device) -> TEMPEST:
         n_hc=4,
         vocab_size=150
     ).to(device)
-    ckpt_path = "checkpoints/v2_best.pth"
+    ckpt_path = "checkpoints/tempest_best.pth"
     if os.path.exists(ckpt_path):
         state = torch.load(ckpt_path, map_location=device)
         model.load_state_dict(state if "state_dict" not in state else state["state_dict"], strict=False)

@@ -17,7 +17,7 @@ base_output_dir = "processed_dataset_01_31_storm"
 storm_validation_start = '1991-01-31'  # Inclusive start timestamp for the held-out geomagnetic storm evaluation period.
 storm_validation_end = '1991-02-07'    # Exclusive end timestamp for the held-out geomagnetic storm evaluation period.
 # Contiguous equal-sized evaluation blocks eliminate spatial and temporal autocorrelation leakage.
-block_size = 150      # Contiguous measurements per block representing ~30 minutes of telemetry at 10-12s cadence.
+block_size = 150      # Contiguous measurements per block representing ~2.5 hours (one complete Akebono orbital pass in 1,000–8,000 km altitude window).
 num_test_blocks = 334 # Total held-out non-adjacent blocks yielding 50,100 samples (~1.5% of non-storm observations).
 
 
