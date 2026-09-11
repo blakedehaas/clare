@@ -150,6 +150,7 @@ def evaluate_model(model, data_loader, criterion):
 
 # Training loop
 total_steps = 0
+os.makedirs('./checkpoints', exist_ok=True)
 for epoch in range(num_epochs):
     model.train()
     for i, batch in enumerate(tqdm(train_loader)):
@@ -168,6 +169,9 @@ for epoch in range(num_epochs):
         # Step the scheduler
         scheduler.step()
         total_steps += 1
+
+        if total_steps % 1000 == 0:
+            torch.save(model.state_dict(), f'./checkpoints/{model_name}.pth')
 
         # Log train loss and learning rate every log_every_step iterations
         if total_steps % log_every_step == 0:
@@ -205,7 +209,4 @@ wandb.log({
 print('Training finished!')
 
 # Save the model
-# Create checkpoints directory if it doesn't exist
-os.makedirs('./checkpoints', exist_ok=True)
-
 torch.save(model.state_dict(), f'./checkpoints/{model_name}.pth')
