@@ -184,6 +184,7 @@ for epoch in range(num_epochs):
         # Evaluate the model 3 times per epoch
         if total_steps % ((len(train_loader) + 2) // 3) == 0:
             test_loss = evaluate_model(model, val_loader, criterion)
+            model.train()
             wandb.log({
                 "test_loss": test_loss,
                 "total_steps": total_steps
