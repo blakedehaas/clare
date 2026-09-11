@@ -2,7 +2,7 @@ import numpy as np
 import torch
 
 from models.long_context import LongContextTransformer
-from train_transformer import ContextDataset, FixedTimeContextDataset
+from train_transformer import ContextDataset, FixedTimeContextDataset, TimeWindowContextDataset
 
 
 def test_context_masks_query_target_and_resets_at_gaps():
@@ -44,3 +44,21 @@ def test_fixed_time_context_averages_bins_and_marks_missing_bins():
     assert np.isclose(tokens[-4, -3].item(), 200 / 15_000)
     assert tokens[-1, -2].item() == 0
     assert label == 7
+
+
+def test_time_window_uses_recent_rows_and_pads_short_history():
+    features = np.arange(6, dtype=np.float32).reshape(6, 1)
+    targets = np.arange(6, dtype=np.float32) * 100
+    timestamps = np.array([
+        "2020-01-01T00:00", "2020-01-01T00:01", "2020-01-01T00:02",
+        "2020-01-01T10:00", "2020-01-01T10:01", "2020-01-01T10:02",
+    ], dtype="datetime64[m]")
+    dataset = TimeWindowContextDataset(features, targets, timestamps, context_length=3, horizon_hours=1)
+
+    tokens, label = dataset[5]
+    assert tokens.shape == (4, 4)
+    assert tokens[0, -2].item() == 0
+    assert tokens[1:3, 0].tolist() == [3, 4]
+    assert np.allclose(tokens[1:3, -1], [-2 / 60, -1 / 60])
+    assert tokens[-1, -2].item() == 0
+    assert label == 5

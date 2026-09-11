@@ -87,6 +87,35 @@ class FixedTimeContextDataset(Dataset):
         return torch.from_numpy(tokens), int(np.clip(self.targets[index] // 100, 0, 149))
 
 
+class TimeWindowContextDataset(Dataset):
+    """Up to N recent observations, restricted to a fixed historical horizon."""
+
+    def __init__(self, features, targets, timestamps, context_length, horizon_hours):
+        order = np.argsort(timestamps)
+        self.features = np.asarray(features, dtype=np.float32)[order]
+        self.targets = np.asarray(targets, dtype=np.float32)[order]
+        self.timestamps = np.asarray(timestamps, dtype="datetime64[ns]")[order]
+        self.context_length = context_length
+        self.horizon = np.timedelta64(horizon_hours, "h")
+
+    def __len__(self):
+        return len(self.targets)
+
+    def __getitem__(self, index):
+        first = np.searchsorted(self.timestamps, self.timestamps[index] - self.horizon)
+        history = np.arange(max(first, index - self.context_length), index)
+        offset = self.context_length - len(history)
+        tokens = np.zeros((self.context_length + 1, self.features.shape[1] + 3), dtype=np.float32)
+        tokens[offset:-1, :-3] = self.features[history]
+        tokens[offset:-1, -3] = self.targets[history] / 15_000
+        tokens[offset:-1, -2] = 1
+        tokens[offset:-1, -1] = (
+            (self.timestamps[history] - self.timestamps[index]).astype("timedelta64[s]").astype(np.float32) / 3600
+        )
+        tokens[-1, :-3] = self.features[index]
+        return torch.from_numpy(tokens), int(np.clip(self.targets[index] // 100, 0, 149))
+
+
 def load_dataset(path):
     path = Path(path)
     if (path / "dataset_info.json").exists():
@@ -131,7 +160,9 @@ def main():
     parser.add_argument("--validation-path", required=True, help="continuous validation split")
     parser.add_argument("--context-length", type=int, default=64)
     parser.add_argument("--max-gap-minutes", type=int, default=10)
-    parser.add_argument("--time-bins", action="store_true", help="use a fixed-duration context instead of previous rows")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--time-bins", action="store_true", help="aggregate a fixed-duration context into bins")
+    mode.add_argument("--time-window", action="store_true", help="take recent observations only within the fixed horizon")
     parser.add_argument("--horizon-hours", type=int, default=6)
     parser.add_argument("--bin-minutes", type=int, default=5)
     parser.add_argument("--batch-size", type=int, default=64)
@@ -145,7 +176,10 @@ def main():
     input_columns = [name for name in train.column_names if name not in UNUSED | {TARGET, TIME}]
     train_x, train_y, train_time, stats = prepare(train, input_columns)
     val_x, val_y, val_time, _ = prepare(validation, input_columns, stats)
-    if args.time_bins:
+    if args.time_window:
+        train_data = TimeWindowContextDataset(train_x, train_y, train_time, args.context_length, args.horizon_hours)
+        val_data = TimeWindowContextDataset(val_x, val_y, val_time, args.context_length, args.horizon_hours)
+    elif args.time_bins:
         if args.horizon_hours * 60 % args.bin_minutes:
             raise ValueError("--bin-minutes must divide --horizon-hours exactly")
         train_data = FixedTimeContextDataset(train_x, train_y, train_time, args.horizon_hours, args.bin_minutes)
