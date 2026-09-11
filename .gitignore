@@ -4,5 +4,6 @@ wandb/*
 *.pyc
 dataset/processed_dataset/*
 dataset/processed_dataset_01_31_storm/*
+dataset/processed_dataset_blocksplit_s*/*
 data/*
 archive/*
