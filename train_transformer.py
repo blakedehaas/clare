@@ -54,6 +54,39 @@ class ContextDataset(Dataset):
         return torch.from_numpy(tokens), label
 
 
+class FixedTimeContextDataset(Dataset):
+    """A fixed time horizon aggregated into equal-width historical bins."""
+
+    def __init__(self, features, targets, timestamps, horizon_hours, bin_minutes):
+        order = np.argsort(timestamps)
+        self.features = np.asarray(features, dtype=np.float32)[order]
+        self.targets = np.asarray(targets, dtype=np.float32)[order]
+        timestamps = np.asarray(timestamps, dtype="datetime64[ns]")[order]
+        self.bin_minutes = bin_minutes
+        self.context_length = horizon_hours * 60 // bin_minutes
+        row_bins = timestamps.astype("datetime64[m]").astype(np.int64) // bin_minutes
+        self.bin_ids, starts, counts = np.unique(row_bins, return_index=True, return_counts=True)
+        self.bin_features = np.add.reduceat(self.features, starts, axis=0) / counts[:, None]
+        self.bin_targets = np.add.reduceat(self.targets, starts) / counts
+        self.row_bins = row_bins
+
+    def __len__(self):
+        return len(self.targets)
+
+    def __getitem__(self, index):
+        wanted = self.row_bins[index] - np.arange(self.context_length, 0, -1)
+        positions = np.searchsorted(self.bin_ids, wanted)
+        present = positions < len(self.bin_ids)
+        present[present] &= self.bin_ids[positions[present]] == wanted[present]
+        tokens = np.zeros((self.context_length + 1, self.features.shape[1] + 3), dtype=np.float32)
+        tokens[:-1, -1] = -np.arange(self.context_length, 0, -1) * self.bin_minutes / 60
+        tokens[:-1, -2] = present
+        tokens[:-1, :-3][present] = self.bin_features[positions[present]]
+        tokens[:-1, -3][present] = self.bin_targets[positions[present]] / 15_000
+        tokens[-1, :-3] = self.features[index]
+        return torch.from_numpy(tokens), int(np.clip(self.targets[index] // 100, 0, 149))
+
+
 def load_dataset(path):
     path = Path(path)
     if (path / "dataset_info.json").exists():
@@ -98,6 +131,9 @@ def main():
     parser.add_argument("--validation-path", required=True, help="continuous validation split")
     parser.add_argument("--context-length", type=int, default=64)
     parser.add_argument("--max-gap-minutes", type=int, default=10)
+    parser.add_argument("--time-bins", action="store_true", help="use a fixed-duration context instead of previous rows")
+    parser.add_argument("--horizon-hours", type=int, default=6)
+    parser.add_argument("--bin-minutes", type=int, default=5)
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--max-steps", type=int)
@@ -109,8 +145,15 @@ def main():
     input_columns = [name for name in train.column_names if name not in UNUSED | {TARGET, TIME}]
     train_x, train_y, train_time, stats = prepare(train, input_columns)
     val_x, val_y, val_time, _ = prepare(validation, input_columns, stats)
-    train_data = ContextDataset(train_x, train_y, train_time, args.context_length, args.max_gap_minutes)
-    val_data = ContextDataset(val_x, val_y, val_time, args.context_length, args.max_gap_minutes)
+    if args.time_bins:
+        if args.horizon_hours * 60 % args.bin_minutes:
+            raise ValueError("--bin-minutes must divide --horizon-hours exactly")
+        train_data = FixedTimeContextDataset(train_x, train_y, train_time, args.horizon_hours, args.bin_minutes)
+        val_data = FixedTimeContextDataset(val_x, val_y, val_time, args.horizon_hours, args.bin_minutes)
+        args.context_length = train_data.context_length
+    else:
+        train_data = ContextDataset(train_x, train_y, train_time, args.context_length, args.max_gap_minutes)
+        val_data = ContextDataset(val_x, val_y, val_time, args.context_length, args.max_gap_minutes)
     if not train_data or not val_data:
         raise ValueError("no continuous sequences found; increase --max-gap-minutes or reduce --context-length")
 
