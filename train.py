@@ -105,8 +105,8 @@ val_ds = val_ds.map(convert_to_tensor, num_proc=os.cpu_count(), remove_columns=a
 train_ds = train_ds.map(convert_to_tensor, num_proc=os.cpu_count(), remove_columns=all_columns)
 val_ds.set_format(type="torch")
 train_ds.set_format(type="torch")
-train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=os.cpu_count())
-val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=os.cpu_count())
+train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
+val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False)
 
 # Initialize the model
 input_size = len(input_columns)
