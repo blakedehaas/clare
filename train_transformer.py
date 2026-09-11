@@ -63,7 +63,7 @@ def load_dataset(path):
 
 
 def prepare(dataset, input_columns, stats=None):
-    data = dataset.with_format("numpy")
+    data = dataset.select_columns(input_columns + [TARGET, TIME]).to_pandas()
     features = []
     stats = {} if stats is None else stats
     for column in input_columns:
@@ -75,7 +75,7 @@ def prepare(dataset, input_columns, stats=None):
             if group in {"AL_index", "SYM_H", "f107_index"}:
                 if group not in stats:
                     group_columns = [name for name in input_columns if name.startswith(group + "_")]
-                    joined = np.concatenate([np.asarray(data[name], dtype=np.float32) for name in group_columns])
+                    joined = data[group_columns].to_numpy(dtype=np.float32).ravel()
                     stats[group] = {"mean": float(joined.mean()), "std": float(joined.std())}
                 values = (values - stats[group]["mean"]) / stats[group]["std"]
         features.append(values)
