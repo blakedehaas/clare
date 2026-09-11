@@ -166,7 +166,7 @@ def main():
     parser.add_argument("--horizon-hours", type=int, default=6)
     parser.add_argument("--bin-minutes", type=int, default=5)
     parser.add_argument("--batch-size", type=int, default=64)
-    parser.add_argument("--epochs", type=int, default=10)
+    parser.add_argument("--epochs", type=int, choices=range(1, 4), default=3)
     parser.add_argument("--max-steps", type=int)
     parser.add_argument("--model-name", default="long_context_transformer")
     args = parser.parse_args()
