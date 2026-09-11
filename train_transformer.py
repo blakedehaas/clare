@@ -100,6 +100,7 @@ def main():
     parser.add_argument("--max-gap-minutes", type=int, default=10)
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--epochs", type=int, default=10)
+    parser.add_argument("--max-steps", type=int)
     parser.add_argument("--model-name", default="long_context_transformer")
     args = parser.parse_args()
 
@@ -138,9 +139,13 @@ def main():
                 wandb.log({"train_loss": loss.item(), "total_steps": step})
             if step % 1000 == 0:
                 torch.save(model.state_dict(), f"checkpoints/{args.model_name}_step_{step}.pth")
+            if args.max_steps and step >= args.max_steps:
+                break
         val_loss = evaluate(model, val_loader, criterion, device)
         model.train()
         wandb.log({"validation_loss": val_loss, "epoch": epoch + 1, "total_steps": step})
+        if args.max_steps and step >= args.max_steps:
+            break
 
 
 if __name__ == "__main__":
