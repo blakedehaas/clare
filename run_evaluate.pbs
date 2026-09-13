@@ -1,5 +1,5 @@
 #!/bin/bash
-#PBS -N eval_1_48
+#PBS -N eval_1_47
 #PBS -A UCUL0008
 #PBS -l select=1:ncpus=8:ngpus=1:mem=32GB
 #PBS -l walltime=02:00:00
@@ -8,33 +8,42 @@
 #PBS -m abe
 #PBS -M blake.dehaas@lasp.colorado.edu
 
-# Move to your project directory
-cd /glade/campaign/univ/ucul0008/auroral_precipitation_ml/clare
+# Move to the directory from which the job was submitted
+cd "$PBS_O_WORKDIR" || cd /glade/campaign/univ/ucul0008/auroral_precipitation_ml/clare
 
 echo "Evaluation Job started at: $(date)"
 echo "Job running on host: $(hostname)"
+echo "Job ID: $PBS_JOBID"
+echo "Working directory: $(pwd)"
+echo ""
 
-# Load necessary modules
+# Load modules (matching setup_env.sh and train script)
 echo "Loading modules..."
-module purge
-module load ncarenv/24.12 
-module load conda
+module --force purge
+module load ncarenv/24.12
+module load gcc
 module load cuda/12.8.0
+module load conda
 echo "Modules loaded."
+echo ""
 
-# Activate your environment
+# Activate virtual environment
 echo "Activating clare_venv..."
 source clare_venv/bin/activate
 echo "Environment activated: $(which python)"
+echo ""
 
 # Display GPU hardware information
+echo "GPU(s) allocated by PBS:"
+echo "CUDA_VISIBLE_DEVICES = $CUDA_VISIBLE_DEVICES"
+echo ""
 echo "nvidia-smi output:"
 nvidia-smi
 echo ""
 
-# Run your evaluation script
-echo "Running Python script: evaluate.py..."
-python evaluate.py
+# Run evaluation script with optional arguments
+echo "Running Python script: evaluate.py ${ARGS:-}..."
+python evaluate.py ${ARGS:-}
 
 EXIT_CODE=$? 
 echo "Python script finished with exit code: $EXIT_CODE"
