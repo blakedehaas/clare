@@ -6,7 +6,7 @@ Dataset validation for configurable block-split experiments.
 This validator:
 
 1. Discovers all datasets matching:
-       processed_dataset_blocksplit_<block_hours>h_s<seed>
+       processed_dataset_blocksplit_<block_minutes>m_s<seed>
 
 2. Groups datasets by block size.
 
@@ -19,7 +19,7 @@ This validator:
 
 4. Writes:
        dataset_validation/
-           <block_size>h/
+           <block_minutes>m/
                summary.txt
                seed_<seed>/
                    validation_report.txt
@@ -53,7 +53,7 @@ from scipy.stats import ks_2samp
 # ======================================================================================
 
 DATASET_PATTERN = re.compile(
-    r"processed_dataset_blocksplit_(\d+)h_s(\d+)$"
+    r"processed_dataset_blocksplit_(\d+)m_s(\d+)$"
 )
 
 VALIDATION_ROOT = "dataset_validation"
@@ -143,19 +143,19 @@ def discover_datasets():
         if not match:
             continue
 
-        block_hours = int(match.group(1))
+        block_minutes = int(match.group(1))
         seed = int(match.group(2))
 
-        groups.setdefault(block_hours, []).append(
+        groups.setdefault(block_minutes, []).append(
             {
                 "seed": seed,
                 "path": entry,
             }
         )
 
-    for block_hours in groups:
-        groups[block_hours] = sorted(
-            groups[block_hours],
+    for block_minutes in groups:
+        groups[block_minutes] = sorted(
+            groups[block_minutes],
             key=lambda x: x["seed"]
         )
 
@@ -408,7 +408,7 @@ def build_cache(train_ds, val_ds, test_ds):
 def validate_single_dataset(
     dataset_dir,
     seed,
-    block_hours,
+    block_minutes,
     output_dir,
 ):
 
@@ -592,7 +592,7 @@ def validate_single_dataset(
 
         if (
             f.startswith(
-                f"block_assignment_{block_hours}h_s{seed}"
+                f"block_assignment_{block_minutes}m_s{seed}"
             )
             and f.endswith(".csv")
         ):
@@ -645,7 +645,7 @@ def validate_single_dataset(
         )
 
         expected = pd.Timedelta(
-            hours=block_hours
+            minutes=block_minutes
         )
 
         durations = (
@@ -801,23 +801,23 @@ def validate_single_dataset(
 # ======================================================================================
 
 def validate_cross_seed(
-    block_hours,
+    block_minutes,
     dataset_infos,
 ):
     if not dataset_infos:
         raise RuntimeError(
-            f"No datasets found for {block_hours}h"
+            f"No datasets found for {block_minutes}m"
         )
         
     output_dir = os.path.join(
         VALIDATION_ROOT,
-        f"{block_hours}h"
+        f"{block_minutes}m"
     )
 
     report = ValidationReport()
 
     report.section(
-        f"CROSS-SEED VALIDATION ({block_hours}h)"
+        f"CROSS-SEED VALIDATION ({block_minutes}m)"
     )
 
     report.section(
@@ -893,7 +893,7 @@ def validate_cross_seed(
 
         dataset_dir = next(
             d["path"]
-            for d in groups[block_hours]
+            for d in groups[block_minutes]
             if d["seed"] == seed
         )
 
@@ -901,7 +901,7 @@ def validate_cross_seed(
             x
             for x in os.listdir(dataset_dir)
             if x.startswith(
-                f"block_assignment_{block_hours}h_s{seed}"
+                f"block_assignment_{block_minutes}m_s{seed}"
             )
         )
 
@@ -956,17 +956,17 @@ def main():
             "No block-split datasets discovered."
         )
 
-    for block_hours in sorted(groups):
+    for block_minutes in sorted(groups):
 
         log(
             f"\n========== "
-            f"{block_hours}h "
+            f"{block_minutes}m "
             f"=========="
         )
 
         block_output = os.path.join(
             VALIDATION_ROOT,
-            f"{block_hours}h"
+            f"{block_minutes}m"
         )
 
         os.makedirs(
@@ -976,7 +976,7 @@ def main():
 
         cross_seed_info = []
 
-        for item in groups[block_hours]:
+        for item in groups[block_minutes]:
             seed = item["seed"]
             dataset_dir = item["path"]
 
@@ -993,7 +993,7 @@ def main():
             result = validate_single_dataset(
                 dataset_dir,
                 seed,
-                block_hours,
+                block_minutes,
                 seed_out,
             )
 
@@ -1002,7 +1002,7 @@ def main():
             )
 
         validate_cross_seed(
-            block_hours,
+            block_minutes,
             cross_seed_info
         )
 

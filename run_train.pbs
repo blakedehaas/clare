@@ -1,5 +1,5 @@
 #!/bin/bash
-#PBS -N train_clare_12h_s0
+#PBS -N train_clare_212m_s0
 #PBS -A UCUL0008
 #PBS -l select=1:ncpus=8:ngpus=1:mem=64GB
 #PBS -l walltime=4:00:00
@@ -40,7 +40,7 @@ echo "nvidia-smi output:"
 nvidia-smi
 echo ""
 
-echo "[INFO] BLOCK_HOURS=${BLOCK_HOURS}"
+echo "[INFO] BLOCK_MINUTES=${BLOCK_MINUTES}"
 echo "[INFO] SPLIT_SEED=${SPLIT_SEED}"
 echo ""
 
@@ -71,4 +71,4 @@ if [ $EXIT_CODE -ne 0 ]; then
 fi
 
 echo ""
-echo "[INFO] Training completed successfully at: $(date) with BLOCK_HOURS=${BLOCK_HOURS} and SPLIT_SEED=${SPLIT_SEED}"
+echo "[INFO] Training completed successfully at: $(date) with BLOCK_MINUTES=${BLOCK_MINUTES} and SPLIT_SEED=${SPLIT_SEED}"

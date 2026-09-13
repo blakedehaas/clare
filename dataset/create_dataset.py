@@ -13,11 +13,11 @@ split_seed = int(os.environ.get("SPLIT_SEED", 0))
 print(f"[INFO] Using split_seed={split_seed}")
 
 # CONFIGURATION
-block_hours = int(os.environ.get("BLOCK_HOURS", 12))
+block_minutes = int(os.environ.get("BLOCK_MINUTES", 212))
 train_frac, val_frac = 0.8, 0.1
 base_output_dir = (
     f"processed_dataset_blocksplit_"
-    f"{block_hours}h_s{split_seed}"
+    f"{block_minutes}m_s{split_seed}"
 )
 
 storm_validation_start = '1991-01-31' # Inclusive start date of the solar storm period
@@ -335,7 +335,7 @@ t0 = pd.Timestamp("1990-01-01")
 
 block_id = (
     (remaining_df.index - t0)
-    // pd.Timedelta(hours=block_hours)
+    // pd.Timedelta(minutes=block_minutes)
 ).astype(int)
 
 unique_blocks = np.sort(np.unique(block_id))
@@ -371,8 +371,8 @@ for b in unique_blocks:
 
     rows.append({
         "block_id": int(b),
-        "start": t0 + pd.Timedelta(hours=int(b) * block_hours),
-        "end": t0 + pd.Timedelta(hours=(int(b) + 1) * block_hours),
+        "start": t0 + pd.Timedelta(minutes=int(b) * block_minutes),
+        "end": t0 + pd.Timedelta(minutes=(int(b) + 1) * block_minutes),
         "split": split,
         "n_samples": int((block_id == b).sum()),
     })
@@ -380,7 +380,7 @@ for b in unique_blocks:
 pd.DataFrame(rows).to_csv(
     os.path.join(
         base_output_dir,
-        f"block_assignment_{block_hours}h_s{split_seed}.csv",
+        f"block_assignment_{block_minutes}m_s{split_seed}.csv",
     ),
     index=False,
 )

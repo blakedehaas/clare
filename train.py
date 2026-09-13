@@ -18,21 +18,22 @@ import constants
 # --- Command Line Arguments ---
 parser = argparse.ArgumentParser(description="Train model on seed-split dataset.")
 parser.add_argument("--seed", type=int, default=int(os.environ.get("SPLIT_SEED", 0)), help="Seed ID for dataset (0, 1, or 2)")
-parser.add_argument("--block-hours", type=int, default=int(os.environ.get("BLOCK_HOURS", 12)))
+parser.add_argument("--block-minutes", type=int, default=int(os.environ.get("BLOCK_MINUTES", 212)), help="Block size in minutes (default: 212)")
 parser.add_argument("--continuous", action="store_true", help="Train continuous regression variant (MSE loss, 1 output) instead of classification.")
 args = parser.parse_args()
 
 seed = args.seed
-block_hours = args.block_hours
+block_minutes = args.block_minutes
+
 base_model_name = '2_0'
 # Distinct model name so continuous doesn't overwrite classification checkpoints
 model_name = (
-    f"{base_model_name}_{block_hours}h_s{seed}_continuous"
+    f"{base_model_name}_{block_minutes}m_s{seed}_continuous"
     if args.continuous
-    else f"{base_model_name}_{block_hours}h_s{seed}"
+    else f"{base_model_name}_{block_minutes}m_s{seed}"
 )
 
-dataset_dir = f"dataset/processed_dataset_blocksplit_{block_hours}h_s{seed}"
+dataset_dir = f"dataset/processed_dataset_blocksplit_{block_minutes}m_s{seed}"
 
 print(f"[INFO] Running training for Seed {seed}")
 print(f"[INFO] Mode: {'Continuous Regression' if args.continuous else 'Classification'}")
@@ -101,7 +102,7 @@ os.makedirs('checkpoints', exist_ok=True)
 # Both classification and continuous share the exact same inputs
 # We use the base model stats file so it can load the precomputed normalization constants
 stats_file = (
-    f'checkpoints/{base_model_name}_{block_hours}h_s{seed}_norm_stats.json'
+    f'checkpoints/{base_model_name}_{block_minutes}m_s{seed}_norm_stats.json'
 )
 
 if os.path.exists(stats_file):
@@ -177,7 +178,7 @@ wandb.init(
     project="clare",
     name=model_name,
     config={
-        "block_hours": block_hours,
+        "block_minutes": block_minutes,
         "seed": seed,
         "mode": "continuous" if args.continuous else "classification",
         "dataset_size": len(train_ds),
@@ -357,7 +358,7 @@ final_val_loss = final_metrics["loss"]
 print(f"\nFinal Validation Loss (Seed {seed}): {final_val_loss:.4f}")
 wandb.log({"final_val_loss": final_val_loss})
 
-wandb.summary["block_hours"] = block_hours
+wandb.summary["block_minutes"] = block_minutes
 wandb.summary["seed"] = seed
 wandb.summary["mode"] = "continuous" if args.continuous else "classification"
 

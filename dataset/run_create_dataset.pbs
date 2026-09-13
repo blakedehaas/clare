@@ -33,7 +33,7 @@ echo "[INFO] Environment activated: $(which python)"
 python --version
 echo ""
 
-echo "[INFO] BLOCK_HOURS=${BLOCK_HOURS}"
+echo "[INFO] BLOCK_MINUTES=${BLOCK_MINUTES}"
 echo "[INFO] SPLIT_SEED=${SPLIT_SEED}"
 echo ""
 
@@ -48,4 +48,4 @@ exit $EXIT_CODE
 fi
 
 echo ""
-echo "[INFO] Dataset creation completed successfully at: $(date) with ${BLOCK_HOURS} BLOCK_HOURS and ${SPLIT_SEED} SPLIT_SEED"
+echo "[INFO] Dataset creation completed successfully at: $(date) with ${BLOCK_MINUTES} BLOCK_MINUTES and ${SPLIT_SEED} SPLIT_SEED"
