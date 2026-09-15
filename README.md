@@ -154,7 +154,18 @@ python -m baselines.evaluate_kutiev \
   --output-json results/kutiev-test-normal.json
 ```
 
-The report includes accuracy within 10% of observed `Te1`, R², RMSE, and coverage. Metrics are calculated only on the model's published applicability domain: 1,000–10,000 km altitude, absolute geomagnetic latitude no greater than 70°, L shell no greater than 3, and the 09:00–16:00 or 22:00–04:00 magnetic-local-time sectors. Rows outside that domain are excluded and reported through the coverage fields rather than extrapolated.
+To compare CLARE on the identical observations, save one CLARE prediction per dataset row as a NumPy array and run:
+
+```bash
+python -m baselines.evaluate_kutiev \
+  --dataset dataset/processed_dataset/test-normal \
+  --comparison-predictions results/clare-test-normal.npy \
+  --comparison-name clare \
+  --output-json results/kutiev-vs-clare-test-normal.json \
+  --output-comparison-csv results/kutiev-vs-clare-test-normal.csv
+```
+
+The paired report and CSV use only rows for which both models have finite predictions, preserving the source dataset index and timestamp for reproducibility. The report includes accuracy within 10% of observed `Te1`, R², RMSE, and coverage. Metrics are calculated only on the model's published applicability domain: 1,000–10,000 km altitude for the equatorial zone (L < 2), 1,000–6,370 km for the midlatitude zone (2 <= L <= 3), absolute geomagnetic latitude no greater than 70°, valid magnetic local time in `[0, 24)`, and the 09:00–16:00 or 22:00–04:00 sectors. Rows outside that domain are excluded and reported through the coverage fields rather than extrapolated.
 
 Because the Kutiev coefficients were derived from 1989–2000 AKEBONO observations, this is a relevant same-instrument historical baseline but not a fully independent validation source.
 

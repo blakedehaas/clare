@@ -52,10 +52,11 @@ def l_shell_from_invariant_latitude(invariant_latitude_deg):
 def _local_time_sector(magnetic_local_time_hours: np.ndarray) -> np.ndarray:
     """Map MLT to the two sectors modeled by Kutiev et al."""
 
-    mlt = np.mod(magnetic_local_time_hours, 24.0)
+    mlt = np.asarray(magnetic_local_time_hours, dtype=float)
     sector = np.full(mlt.shape, "", dtype="<U1")
-    sector[(mlt >= 9.0) & (mlt < 16.0)] = "D"
-    sector[(mlt >= 22.0) | (mlt < 4.0)] = "N"
+    valid = np.isfinite(mlt) & (mlt >= 0.0) & (mlt < 24.0)
+    sector[valid & (mlt >= 9.0) & (mlt < 16.0)] = "D"
+    sector[valid & ((mlt >= 22.0) | (mlt < 4.0))] = "N"
     return sector
 
 
@@ -88,6 +89,8 @@ def predict_kutiev_2002(
         & np.isfinite(l_shell)
     )
     boundary_tolerance = 1e-10
+    radial_zone = np.where(l_shell < 2.0 - boundary_tolerance, "E", "M")
+    altitude_supported = (radial_zone == "E") | (altitude <= 6370.0)
     eligible = (
         finite
         & (altitude >= 1000.0)
@@ -95,11 +98,11 @@ def predict_kutiev_2002(
         & (np.abs(glat) <= 70.0)
         & (l_shell >= 1.0 - boundary_tolerance)
         & (l_shell <= 3.0 + boundary_tolerance)
+        & altitude_supported
         & (sector != "")
     )
 
     hemisphere = np.where(glat >= 0.0, "N", "S")
-    radial_zone = np.where(l_shell < 2.0 - boundary_tolerance, "E", "M")
     zone = np.char.add(np.char.add(sector, hemisphere), radial_zone)
     zone = np.where(eligible, zone, "")
 
