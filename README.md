@@ -144,6 +144,20 @@ Evaluate the performance of a trained model checkpoint:
         ```
     *   The script will load the specified checkpoint and normalization statistics, run predictions on the test set, and print evaluation metrics. Results may also be logged to Weights & Biases if configured within the script.
 
+### Kutiev et al. (2002) baseline
+
+The repository includes an implementation of the average analytical electron-temperature model from Kutiev, Oyama, and Abe (2002), DOI [`10.1029/2002JA009494`](https://doi.org/10.1029/2002JA009494). Run it against either processed CLARE test dataset:
+
+```bash
+python -m baselines.evaluate_kutiev \
+  --dataset dataset/processed_dataset/test-normal \
+  --output-json results/kutiev-test-normal.json
+```
+
+The report includes accuracy within 10% of observed `Te1`, R², RMSE, and coverage. Metrics are calculated only on the model's published applicability domain: 1,000–10,000 km altitude, absolute geomagnetic latitude no greater than 70°, L shell no greater than 3, and the 09:00–16:00 or 22:00–04:00 magnetic-local-time sectors. Rows outside that domain are excluded and reported through the coverage fields rather than extrapolated.
+
+Because the Kutiev coefficients were derived from 1989–2000 AKEBONO observations, this is a relevant same-instrument historical baseline but not a fully independent validation source.
+
 ---
 
 ## License
