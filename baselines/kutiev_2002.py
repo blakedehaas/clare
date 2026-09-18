@@ -1,9 +1,10 @@
 """Average Akebono electron-temperature model from Kutiev et al. (2002).
 
 Reference: https://doi.org/10.1029/2002JA009494, equations (1)-(2) and
-Tables 2-3. Their altitude regressions are defined from 1000-6370 km, for
-L <= 3, daytime (09-16 MLT), and nighttime (22-04 MLT). Unsupported samples
-return NaN rather than an invented interpolation or extrapolation.
+Tables 2-3. The default uses the conservative domain where the printed
+parameterization is unambiguous: 1000-6370 km, L <= 3, geomagnetic latitude
+within +/-70 degrees, daytime (09-16 MLT), and nighttime (22-04 MLT).
+Unsupported samples return NaN rather than an invented continuation.
 """
 
 from typing import Dict

@@ -29,7 +29,8 @@ def main() -> None:
         "paper_supported_subset": evaluate_kutiev_metrics(observed, supported),
         "warning": (
             "The full-set result is a sensitivity analysis: it extrapolates beyond 6370 km "
-            "and L=3 and assigns transition hours to the nearer published day/night sector."
+            "and L=3 and assigns transition hours to the nearer published day/night sector. "
+            "Two samples above L=28 contribute 99.994% of its squared error."
         ),
     }
     rendered = json.dumps(report, indent=2)

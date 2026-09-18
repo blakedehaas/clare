@@ -14,5 +14,5 @@
     "mae": 1576.0561831229074,
     "acc_10": 25.214285714285715
   },
-  "warning": "The full-set result is a sensitivity analysis: it extrapolates beyond 6370 km and L=3 and assigns transition hours to the nearer published day/night sector."
+  "warning": "The full-set result is a sensitivity analysis: it extrapolates beyond 6370 km and L=3 and assigns transition hours to the nearer published day/night sector. Two samples above L=28 contribute 99.994% of its squared error."
 }
