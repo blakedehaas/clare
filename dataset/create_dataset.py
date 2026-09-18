@@ -1,358 +1,302 @@
-import os
 import glob
-import numpy as np
-import pandas as pd
-from tqdm import tqdm
-import datasets
-import pyarrow as pa
-from sklearn.model_selection import train_test_split
-import math
+import os
 import shutil
 
-# Set random seeds for reproducibility
-np.random.seed(42)
+import datasets
+import numpy as np
+import pandas as pd
+import pyarrow as pa
+from tqdm import tqdm
 
-# CONFIGURATION
-base_output_dir = "processed_dataset_01_31_storm"
-storm_validation_start = '1991-01-31' # Inclusive start date of the solar storm period
-storm_validation_end = '1991-02-07'  # Exclusive end date of the solar storm period
-test_normal_size = 50000  # Number of rows for the test set
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+BLOCK_MINUTES = int(os.environ.get("BLOCK_MINUTES", 212))
+SPLIT_SEED = int(os.environ.get("SPLIT_SEED", 0))
+TRAIN_FRACTION = 0.9
+STORM_START = pd.Timestamp("1991-01-31")
+STORM_END = pd.Timestamp("1991-02-07")
+HISTORY_WINDOW = pd.Timedelta(hours=72)
+T0 = pd.Timestamp("1990-01-01")
+
+OUTPUT_DIR = os.path.join(
+    SCRIPT_DIR,
+    f"processed_dataset_blocksplit_{BLOCK_MINUTES}m_s{SPLIT_SEED}",
+)
+AKEBONO_PATH = os.path.join(SCRIPT_DIR, "input_dataset", "Akebono_combined.tsv")
+KP_PATH = os.path.join(SCRIPT_DIR, "input_dataset", "omni_kp_index.lst")
+AL_SYMH_GLOB = os.path.join(SCRIPT_DIR, "input_dataset", "omni_al_index_symh", "*.lst")
+F107_GLOB = os.path.join(SCRIPT_DIR, "input_dataset", "omni_f107", "*.lst")
 
 
-def check_data_files():
-    """Check if required data files exist and return proper paths."""
-    import glob
-    import os
-    
-    # Check if the Akebono data file exists
-    if not os.path.exists(akebono_file_path):
-        raise FileNotFoundError(f"Akebono data file not found at: {akebono_file_path}")
-    
-    # Check if the OMNI AL/SYM-H directory exists
-    omni_dir = os.path.dirname(omni_al_symh_path)
-    if not os.path.exists(omni_dir):
-        raise FileNotFoundError(f"OMNI AL/SYM-H directory not found at: {omni_dir}")
-    
-    # Check if the F10.7 directory exists
-    f107_dir = os.path.dirname(f107_file_path)
-    if not os.path.exists(f107_dir):
-        raise FileNotFoundError(f"F10.7 directory not found at: {f107_dir}")
-    
-    # Check if the KP Index file exists
-    if not os.path.exists(kp_file_path):
-        raise FileNotFoundError(f"KP Index file not found at: {kp_file_path}")
-    
-    # Check for .lst files in OMNI AL/SYM-H and F10.7 directories
-    al_symh_files = glob.glob(omni_al_symh_path)
-    f107_files = glob.glob(f107_file_path)
-    
+def require_inputs():
+    if not os.path.isfile(AKEBONO_PATH):
+        raise FileNotFoundError(AKEBONO_PATH)
+    if not os.path.isfile(KP_PATH):
+        raise FileNotFoundError(KP_PATH)
+
+    al_symh_files = sorted(glob.glob(AL_SYMH_GLOB))
+    f107_files = sorted(glob.glob(F107_GLOB))
     if not al_symh_files:
-        raise FileNotFoundError(f"No .lst files found in: {omni_dir}")
+        raise FileNotFoundError(AL_SYMH_GLOB)
     if not f107_files:
-        raise FileNotFoundError(f"No .lst files found in: {f107_dir}")
-    
-    # Output the file status
-    print("Data files found:")
-    print(f"Akebono: {akebono_file_path}")
-    print(f"OMNI AL/SYM-H files: {len(al_symh_files)} files")
-    print(f"F10.7 files: {len(f107_files)} files")
-    print(f"KP Index file: {kp_file_path}")
-    
+        raise FileNotFoundError(F107_GLOB)
     return al_symh_files, f107_files
 
-def print_rows_removed(before_count, after_df, step_description, column_to_check=None):
-    after_count = len(after_df)
-    rows_removed = before_count - after_count
-    print(f"{step_description}:")
-    print(f"Rows removed: {rows_removed}")
-    print(f"Rows remaining: {after_count}")
-    
-    if column_to_check:
-        min_value = after_df[column_to_check].min()
-        max_value = after_df[column_to_check].max()
-        print(f"New range of '{column_to_check}': {min_value} to {max_value}")
-    
-    print("\n")
-    return after_count
 
-# Define relative paths to input data
-akebono_file_path = os.path.join('input_dataset', 'Akebono_combined.tsv')
-kp_file_path = os.path.join('input_dataset', 'omni_kp_index.lst')
-omni_al_symh_path = os.path.join('input_dataset', 'omni_al_index_symh', '*.lst')
-f107_file_path = os.path.join('input_dataset', 'omni_f107', '*.lst')
-
-al_symh_files, f107_files = check_data_files()
-
-# Read the Akebono data in chunks to optimize memory usage
-chunk_size = 500000
-chunks = []
-initial_row_count = 0
-
-print("Reading Akebono data in chunks...")
-for chunk in tqdm(pd.read_csv(akebono_file_path, sep='\t', chunksize=chunk_size), desc="Loading Akebono data"):
-    chunk['DateFormatted'] = pd.to_datetime(chunk['DateFormatted'], errors='coerce')
-    initial_row_count += len(chunk)
-    chunks.append(chunk)
-
-df = pd.concat(chunks, ignore_index=True)
-del chunks
-
-print(f"\nInitial number of rows: {initial_row_count}\n")
-print("Starting data cleaning steps...")
-
-# Remove rows with '999' values in XXLAT and XXLON
-columns_with_999 = ['XXLAT', 'XXLON']
-mask_999 = (df[columns_with_999] == 999).any(axis=1)
-filtered_df = df[~mask_999]
-initial_row_count = print_rows_removed(initial_row_count, filtered_df, "After removing rows with '999' values", column_to_check='GLAT')
-
-# Remove rows with ILAT > 90
-filtered_df = filtered_df[filtered_df['ILAT'] <= 90]
-initial_row_count = print_rows_removed(initial_row_count, filtered_df, "After removing rows with ILAT > 90", column_to_check='ILAT')
-
-# Filter Altitude between 1000km and 8000km
-filtered_df = filtered_df[(filtered_df['Altitude'] >= 1000) & (filtered_df['Altitude'] <= 8000)]
-initial_row_count = print_rows_removed(initial_row_count, filtered_df, "After filtering Altitude between 1000km and 8000km", column_to_check='Altitude')
-
-# Convert DateFormatted to datetime, remove NaT values, and filter rows before 1990-01-01
-filtered_df['DateFormatted'] = pd.to_datetime(filtered_df['DateFormatted'], errors='coerce')
-filtered_df = filtered_df.dropna(subset=['DateFormatted'])
-filtered_df = filtered_df[filtered_df['DateFormatted'] >= '1990-01-01']
-initial_row_count = print_rows_removed(initial_row_count, filtered_df, "After filtering rows before January 1st, 1990", column_to_check='DateFormatted')
-
-# Combine date and time into a single datetime column
-filtered_df['DateTimeFormatted'] = pd.to_datetime(
-    filtered_df['DateFormatted'].dt.strftime('%Y-%m-%d') + ' ' + filtered_df['TimeFormatted'].astype(str),
-    errors='coerce'
-)
-filtered_df['DateTimeFormatted'] = filtered_df['DateTimeFormatted'].dt.floor('min')
-filtered_df = filtered_df.drop(columns=['DateFormatted', 'TimeFormatted', 'Date', 'Time'], errors='ignore')
-
-for col in ['AL_index', 'SYM_H']:
-    if col not in filtered_df.columns:
-        filtered_df[col] = np.nan
-
-filtered_df.reset_index(drop=True, inplace=True)
-filtered_df.set_index('DateTimeFormatted', inplace=True)
-
-# -----------------------------------
-# SYM-H and AL Index Data
-# -----------------------------------
-print("Processing SYM-H and AL index data...")
-
-df_list = []
-for file in tqdm(al_symh_files, desc="Loading omni_al_index_symh data"):
-    try:
-        columns = ['Year', 'Day', 'Hour', 'Minute', 'AL_index', 'SYM_H']
-        df_temp = pd.read_csv(file, sep=r'\s+', names=columns)
-        df_temp['DateTime'] = pd.to_datetime(df_temp['Year'] * 1000 + df_temp['Day'], format='%Y%j') \
-                            + pd.to_timedelta(df_temp['Hour'], unit='h') \
-                            + pd.to_timedelta(df_temp['Minute'], unit='m')
-        df_temp = df_temp[['DateTime', 'AL_index', 'SYM_H']]
-        df_list.append(df_temp)
-    except Exception as e:
-        print(f"Error reading file {file}: {str(e)}")
-        continue
-
-if not df_list:
-    raise ValueError("No valid data files were processed. Please ensure your data files exist and are properly formatted.")
-
-omni_df = pd.concat(df_list, ignore_index=True)
-del df_list
-omni_df.drop_duplicates(subset='DateTime', keep='first', inplace=True)
-omni_df.set_index('DateTime', inplace=True)
-omni_df.sort_index(inplace=True)
-filtered_df.sort_index(inplace=True)
-
-print("Expanding temporal features for SYM-H and AL index...")
-al_time_range = pd.timedelta_range(start='0m', end='5h', freq='10min')
-sym_h_time_range = pd.timedelta_range(start='0m', end='3d', freq='30min')
-dt_index = filtered_df.index
-al_timestamps = dt_index.values[:, None] - al_time_range.values
-al_timestamps = pd.DatetimeIndex(al_timestamps.ravel())
-sym_h_timestamps = dt_index.values[:, None] - sym_h_time_range.values
-sym_h_timestamps = pd.DatetimeIndex(sym_h_timestamps.ravel())
-al_values = omni_df['AL_index'].reindex(al_timestamps).values.reshape(len(dt_index), -1)
-sym_h_values = omni_df['SYM_H'].reindex(sym_h_timestamps).values.reshape(len(dt_index), -1)
-
-print("Creating AL_index temporal features...")
-al_columns = {}
-for i in tqdm(range(al_values.shape[1]), desc="AL_index columns"):
-    al_columns[f'AL_index_{i}'] = al_values[:, i]
-
-print("Creating SYM_H temporal features...")
-sym_h_columns = {}
-for i in tqdm(range(sym_h_values.shape[1]), desc="SYM_H columns"):
-    sym_h_columns[f'SYM_H_{i}'] = sym_h_values[:, i]
-
-print("Concatenating new temporal features to the DataFrame...")
-filtered_df = pd.concat([
-    filtered_df, 
-    pd.DataFrame(al_columns, index=filtered_df.index),
-    pd.DataFrame(sym_h_columns, index=filtered_df.index)
-], axis=1)
-filtered_df.drop(columns=['AL_index', 'SYM_H'], inplace=True, errors='ignore')
-
-# -----------------------------------
-# F10.7 Solar Flux Index
-# -----------------------------------
-print("Processing F10.7 solar flux index data...")
-
-f107_list = []
-for file in tqdm(f107_files, desc="Loading f107 data"):
-    try:
-        columns = ['Year', 'Day', 'Hour', 'f107_index']
-        f107_df = pd.read_csv(file, sep=r'\s+', names=columns)
-        f107_df['DateTime'] = pd.to_datetime(f107_df['Year'] * 1000 + f107_df['Day'], format='%Y%j') \
-                              + pd.to_timedelta(f107_df['Hour'], unit='h')
-        f107_df = f107_df[['DateTime', 'f107_index']]
-        f107_list.append(f107_df)
-    except Exception as e:
-        print(f"Error reading file {file}: {str(e)}")
-        continue
-
-if not f107_list:
-    raise ValueError("No valid F10.7 files were processed. Please ensure your data files exist and are properly formatted.")
-
-f107_df_combined = pd.concat(f107_list, ignore_index=True)
-del f107_list
-f107_df_combined.drop_duplicates(subset='DateTime', keep='first', inplace=True)
-f107_df_combined.set_index('DateTime', inplace=True)
-f107_df_combined.sort_index(inplace=True)
-
-print("Expanding temporal features for F10.7 index...")
-f107_time_range = pd.timedelta_range(start='0h', end='72h', freq='24h')
-f107_timestamps = dt_index.values[:, None] - f107_time_range.values
-f107_timestamps = pd.DatetimeIndex(f107_timestamps.ravel()).round('h')
-f107_values = f107_df_combined['f107_index'].reindex(f107_timestamps).values.reshape(len(dt_index), -1)
-
-print("Creating f107_index temporal features...")
-f107_columns = {}
-for i in tqdm(range(f107_values.shape[1]), desc="f107_index columns"):
-    f107_columns[f'f107_index_{i}'] = f107_values[:, i]
-
-print("Concatenating f107_index temporal features to the DataFrame...")
-filtered_df = pd.concat([filtered_df, pd.DataFrame(f107_columns, index=filtered_df.index)], axis=1)
-
-# -----------------------------------
-# Kp Index Data
-# -----------------------------------
-print("Processing Kp index data...")
-try:
-    kp_df = pd.read_csv(kp_file_path, sep=r'\s+', names=['Year', 'DOY', 'Hour', 'Kp_index'])
-    kp_df['DateTime'] = pd.to_datetime(kp_df['Year'] * 1000 + kp_df['DOY'], format='%Y%j') \
-                        + pd.to_timedelta(kp_df['Hour'], unit='h')
-    kp_df = kp_df[['DateTime', 'Kp_index']]
-except Exception as e:
-    print(f"Error reading kp index file {kp_file_path}: {str(e)}")
-    kp_df = pd.DataFrame(columns=['DateTime', 'Kp_index'])
-
-if kp_df.empty:
-    raise ValueError("No valid kp index data was processed. Please ensure your file exists and is properly formatted.")
-
-kp_df.drop_duplicates(subset='DateTime', keep='first', inplace=True)
-kp_df.set_index('DateTime', inplace=True)
-kp_df.sort_index(inplace=True)
-
-print("Adding instantaneous Kp index...")
-# Round filtered_df index to nearest hour to match kp_df hourly data
-rounded_index = filtered_df.index.round('H')
-filtered_df['Kp_index'] = kp_df['Kp_index'].reindex(rounded_index).values
-
-# -----------------------------------
-# Data Cleaning: Replace Invalid Values and Optimize Data Types
-# -----------------------------------
-print("Cleaning data and optimizing data types...")
-
-# List of invalid placeholder values
-invalid_values = [99.9, 999.9, 9.999, 9999.0, 9999.99, 99999.99, 9999999, 9999999.0]
-
-# Function to count and replace invalid values
-def replace_and_count_invalid_values(df, invalid_values, replacement=0):
-    """
-    Replaces invalid values in the DataFrame and returns a report
-    of how many values were updated for each invalid value.
-    
-    Parameters:
-        df (pd.DataFrame): The DataFrame to clean.
-        invalid_values (list): A list of invalid values to replace.
-        replacement (int/float): The value to replace invalid values with.
-    
-    Returns:
-        dict: A dictionary containing the count of replaced values for each invalid value.
-    """
-    update_counts = {}
-    
-    for value in invalid_values:
-        # Count how many values match the invalid value
-        count = (df == value).sum().sum()
-        if count > 0:
-            update_counts[value] = count
-            # Replace the invalid value with the replacement
-            df.replace(value, replacement, inplace=True)
-    
-    # Generate the report
-    if update_counts:
-        print("\nInvalid Value Replacement Report:")
-        for val, cnt in update_counts.items():
-            print(f"Replaced {cnt} instances of {val} with {replacement}.")
-    else:
-        print("\nNo invalid values found to replace.")
-    
-    return update_counts
-
-# Apply the function to the filtered_df
-invalid_value_report = replace_and_count_invalid_values(filtered_df, invalid_values)
-
-# -----------------------------------
-# Dataset Splitting
-# -----------------------------------
-print("\nSplitting the dataset into training, validation, and test sets...")
+def report_rows(before, frame, label):
+    print(f"{label}: removed {before - len(frame):,}; remaining {len(frame):,}")
+    return len(frame)
 
 
-# Clean up existing output directory
-if os.path.exists(base_output_dir):
-    print(f"\nRemoving existing output directory: {base_output_dir}")
-    shutil.rmtree(base_output_dir)
+def load_akebono():
+    chunks = []
+    total = 0
+    for chunk in tqdm(
+        pd.read_csv(AKEBONO_PATH, sep="\t", chunksize=500_000),
+        desc="Loading Akebono",
+    ):
+        chunk["DateFormatted"] = pd.to_datetime(chunk["DateFormatted"], errors="coerce")
+        total += len(chunk)
+        chunks.append(chunk)
 
-os.makedirs(base_output_dir, exist_ok=True)
+    frame = pd.concat(chunks, ignore_index=True)
+    del chunks
+    print(f"Initial rows: {total:,}")
 
-# 1. Extract the May 1991 solar storm period for validation # Start date of the solar storm period
-val_mask = (filtered_df.index >= storm_validation_start) & (filtered_df.index < storm_validation_end)
-val_df = filtered_df.loc[val_mask].copy()
-remaining_df = filtered_df.loc[~val_mask].copy()
-del filtered_df  # Free up memory
+    before = total
+    frame = frame[~(frame[["XXLAT", "XXLON"]] == 999).any(axis=1)].copy()
+    before = report_rows(before, frame, "Invalid XXLAT/XXLON")
 
-print(f"Extracted {len(val_df)} rows for validation (May 1991 solar storm period)")
+    frame = frame[frame["ILAT"] <= 90].copy()
+    before = report_rows(before, frame, "ILAT > 90")
 
-# 2. Split remaining data to get test set (50,000 rows)
-train_df, test_df = train_test_split(remaining_df, test_size=test_normal_size, random_state=42)
-del remaining_df  # Free up memory
+    frame = frame[(frame["Altitude"] >= 1000) & (frame["Altitude"] <= 8000)].copy()
+    before = report_rows(before, frame, "Altitude outside 1000-8000 km")
 
-print(f"Split remaining data into {len(train_df)} training rows and {len(test_df)} test rows")
+    frame = frame.dropna(subset=["DateFormatted"])
+    frame = frame[frame["DateFormatted"] >= T0].copy()
+    report_rows(before, frame, "Invalid/pre-1990 dates")
 
-# Function to save dataset
-def save_dataset(df, name, output_dir):
-    """Save a DataFrame as a HuggingFace dataset."""
-    print(f"Saving {name} dataset...")
-    dataset = datasets.Dataset(pa.Table.from_pandas(df))
-    dataset.save_to_disk(os.path.join(base_output_dir, output_dir))
-    print(f"Saved {len(df)} rows to {output_dir}")
+    frame["DateTimeFormatted"] = pd.to_datetime(
+        frame["DateFormatted"].dt.strftime("%Y-%m-%d")
+        + " "
+        + frame["TimeFormatted"].astype(str),
+        errors="coerce",
+    ).dt.floor("min")
+    frame = frame.dropna(subset=["DateTimeFormatted"])
+    frame = frame.drop(
+        columns=["DateFormatted", "TimeFormatted", "Date", "Time"],
+        errors="ignore",
+    )
+    frame = frame.set_index("DateTimeFormatted").sort_index()
+    return frame
 
-# Save validation and test datasets
-save_dataset(val_df, "test-storm", "test-storm")
-del val_df
-save_dataset(test_df, "test-normal", "test-normal")
-del test_df
 
-# 3. Save the training dataset in chunks of 250,000 rows
-chunk_size = 250_000 # Adjust this if you have memory issues
-num_chunks = (len(train_df) + chunk_size - 1) // chunk_size
+def load_al_symh(files):
+    frames = []
+    columns = ["Year", "Day", "Hour", "Minute", "AL_index", "SYM_H"]
+    for path in tqdm(files, desc="Loading AL/SYM-H"):
+        frame = pd.read_csv(path, sep=r"\s+", names=columns)
+        frame["DateTime"] = (
+            pd.to_datetime(frame["Year"] * 1000 + frame["Day"], format="%Y%j")
+            + pd.to_timedelta(frame["Hour"], unit="h")
+            + pd.to_timedelta(frame["Minute"], unit="m")
+        )
+        frames.append(frame[["DateTime", "AL_index", "SYM_H"]])
 
-for i in range(num_chunks):
-    chunk_df = train_df.iloc[i*chunk_size : (i+1)*chunk_size]
-    chunk_name = f"train_chunk_{i+1}"
-    chunk_dir = os.path.join("train_chunks", chunk_name)
-    save_dataset(chunk_df, chunk_name, chunk_dir)
+    frame = pd.concat(frames, ignore_index=True)
+    return frame.drop_duplicates("DateTime").set_index("DateTime").sort_index()
 
-print(f"\nDataset saving complete! Saved {num_chunks} training chunks of up to {chunk_size} rows each.")
+
+def load_f107(files):
+    frames = []
+    columns = ["Year", "Day", "Hour", "f107_index"]
+    for path in tqdm(files, desc="Loading F10.7"):
+        frame = pd.read_csv(path, sep=r"\s+", names=columns)
+        frame["DateTime"] = (
+            pd.to_datetime(frame["Year"] * 1000 + frame["Day"], format="%Y%j")
+            + pd.to_timedelta(frame["Hour"], unit="h")
+        )
+        frames.append(frame[["DateTime", "f107_index"]])
+
+    frame = pd.concat(frames, ignore_index=True)
+    return frame.drop_duplicates("DateTime").set_index("DateTime").sort_index()
+
+
+def load_kp():
+    frame = pd.read_csv(KP_PATH, sep=r"\s+", names=["Year", "DOY", "Hour", "Kp_index"])
+    frame["DateTime"] = (
+        pd.to_datetime(frame["Year"] * 1000 + frame["DOY"], format="%Y%j")
+        + pd.to_timedelta(frame["Hour"], unit="h")
+    )
+    return frame[["DateTime", "Kp_index"]].drop_duplicates("DateTime").set_index("DateTime").sort_index()
+
+
+def add_history_features(frame, al_symh, f107, kp):
+    index = frame.index
+
+    al_offsets = pd.timedelta_range("0m", "5h", freq="10min")
+    al_times = pd.DatetimeIndex((index.values[:, None] - al_offsets.values).ravel())
+    al_values = al_symh["AL_index"].reindex(al_times).to_numpy().reshape(len(index), -1)
+
+    symh_offsets = pd.timedelta_range("0m", "3d", freq="30min")
+    symh_times = pd.DatetimeIndex((index.values[:, None] - symh_offsets.values).ravel())
+    symh_values = al_symh["SYM_H"].reindex(symh_times).to_numpy().reshape(len(index), -1)
+
+    f107_offsets = pd.timedelta_range("0h", "72h", freq="24h")
+    f107_times = pd.DatetimeIndex((index.values[:, None] - f107_offsets.values).ravel()).floor("h")
+    f107_values = f107["f107_index"].reindex(f107_times).to_numpy().reshape(len(index), -1)
+
+    history = {
+        **{f"AL_index_{i}": al_values[:, i] for i in range(al_values.shape[1])},
+        **{f"SYM_H_{i}": symh_values[:, i] for i in range(symh_values.shape[1])},
+        **{f"f107_index_{i}": f107_values[:, i] for i in range(f107_values.shape[1])},
+    }
+    frame = pd.concat([frame, pd.DataFrame(history, index=index)], axis=1)
+    frame = frame.drop(columns=["AL_index", "SYM_H"], errors="ignore")
+    frame["Kp_index"] = kp["Kp_index"].reindex(index.floor("h")).to_numpy()
+    return frame
+
+
+def block_ids(index):
+    return ((index - T0) // pd.Timedelta(minutes=BLOCK_MINUTES)).astype(int)
+
+
+def save_dataset(frame, directory):
+    path = os.path.join(OUTPUT_DIR, directory)
+    dataset = datasets.Dataset(pa.Table.from_pandas(frame))
+    dataset.save_to_disk(path)
+    print(f"Saved {len(frame):,} rows to {path}")
+
+
+def main():
+    print(f"BLOCK_MINUTES={BLOCK_MINUTES}, SPLIT_SEED={SPLIT_SEED}")
+    al_symh_files, f107_files = require_inputs()
+
+    frame = load_akebono()
+    frame = add_history_features(
+        frame,
+        load_al_symh(al_symh_files),
+        load_f107(f107_files),
+        load_kp(),
+    )
+
+    nan_rows = frame.isna().any(axis=1)
+    print(f"Rows containing NaN removed: {int(nan_rows.sum()):,}")
+    frame = frame.loc[~nan_rows].copy()
+    if frame.empty:
+        raise RuntimeError("No rows remain after filtering.")
+
+    full_n_samples = len(frame)
+    full_n_blocks = int(pd.Series(block_ids(frame.index)).nunique())
+    full_start = frame.index.min()
+    full_end = frame.index.max()
+
+    embargo_end = STORM_END + HISTORY_WINDOW
+    storm_mask = (frame.index >= STORM_START) & (frame.index < STORM_END)
+    embargo_mask = (frame.index >= STORM_END) & (frame.index < embargo_end)
+
+    storm_df = frame.loc[storm_mask].copy()
+    embargo_df = frame.loc[embargo_mask].copy()
+    development_df = frame.loc[~(storm_mask | embargo_mask)].copy()
+    del frame
+
+    development_block_ids = block_ids(development_df.index)
+    block_counts = pd.Series(development_block_ids).value_counts().sort_index()
+    occupied_blocks = block_counts.index.to_numpy()
+    if len(occupied_blocks) < 2:
+        raise RuntimeError("At least two occupied development blocks are required.")
+
+    shuffled = np.random.default_rng(SPLIT_SEED).permutation(occupied_blocks)
+    shuffled_counts = block_counts.reindex(shuffled).to_numpy()
+    cumulative = np.cumsum(shuffled_counts)
+    target = TRAIN_FRACTION * len(development_df)
+    candidates = np.arange(1, len(shuffled))
+    best_k = int(candidates[np.argmin(np.abs(cumulative[candidates - 1] - target))])
+
+    train_blocks = set(shuffled[:best_k])
+    val_blocks = set(shuffled[best_k:])
+    assignment = pd.Series(development_block_ids, index=development_df.index).map(
+        lambda value: "train" if value in train_blocks else "val"
+    )
+    train_df = development_df.loc[assignment == "train"].copy()
+    val_df = development_df.loc[assignment == "val"].copy()
+
+    if train_blocks & val_blocks:
+        raise AssertionError("Train/validation block overlap detected.")
+    for name, split in (("train", train_df), ("val", val_df), ("test-storm", storm_df)):
+        if split.isna().any().any():
+            raise AssertionError(f"{name} contains NaN values.")
+    for name, split in (("train", train_df), ("val", val_df)):
+        if ((split.index >= STORM_START) & (split.index < embargo_end)).any():
+            raise AssertionError(f"{name} contains storm or embargo rows.")
+
+    if os.path.exists(OUTPUT_DIR):
+        shutil.rmtree(OUTPUT_DIR)
+    os.makedirs(OUTPUT_DIR)
+
+    assignment_rows = []
+    for block_id in occupied_blocks:
+        assignment_rows.append(
+            {
+                "block_id": int(block_id),
+                "start": T0 + pd.Timedelta(minutes=int(block_id) * BLOCK_MINUTES),
+                "end": T0 + pd.Timedelta(minutes=(int(block_id) + 1) * BLOCK_MINUTES),
+                "split": "train" if block_id in train_blocks else "val",
+                "n_samples": int(block_counts.loc[block_id]),
+            }
+        )
+    pd.DataFrame(assignment_rows).to_csv(
+        os.path.join(OUTPUT_DIR, f"block_assignment_{BLOCK_MINUTES}m_s{SPLIT_SEED}.csv"),
+        index=False,
+    )
+
+    def summary_row(name, split, n_blocks):
+        return {
+            "split": name,
+            "n_samples": int(len(split)),
+            "n_blocks": int(n_blocks),
+            "time_start": split.index.min() if len(split) else pd.NaT,
+            "time_end": split.index.max() if len(split) else pd.NaT,
+        }
+
+    summary = pd.DataFrame(
+        [
+            {
+                "split": "full-filtered",
+                "n_samples": full_n_samples,
+                "n_blocks": full_n_blocks,
+                "time_start": full_start,
+                "time_end": full_end,
+            },
+            summary_row("train", train_df, len(train_blocks)),
+            summary_row("val", val_df, len(val_blocks)),
+            summary_row("test-storm", storm_df, pd.Series(block_ids(storm_df.index)).nunique()),
+            summary_row("post-storm-embargo", embargo_df, pd.Series(block_ids(embargo_df.index)).nunique()),
+        ]
+    )
+    summary["block_minutes"] = BLOCK_MINUTES
+    summary["split_seed"] = SPLIT_SEED
+    summary["storm_start"] = STORM_START
+    summary["storm_end_exclusive"] = STORM_END
+    summary["post_storm_embargo_end_exclusive"] = embargo_end
+    summary.to_csv(
+        os.path.join(OUTPUT_DIR, f"split_summary_{BLOCK_MINUTES}m_s{SPLIT_SEED}.csv"),
+        index=False,
+    )
+
+    train_pct = 100.0 * len(train_df) / len(development_df)
+    print(f"Train: {len(train_df):,} rows, {len(train_blocks):,} blocks ({train_pct:.4f}%)")
+    print(f"Validation: {len(val_df):,} rows, {len(val_blocks):,} blocks ({100.0 - train_pct:.4f}%)")
+    print(f"Held-out storm: {len(storm_df):,} rows")
+    print(f"Post-storm embargo discarded: {len(embargo_df):,} rows")
+
+    save_dataset(storm_df, "test-storm")
+    save_dataset(val_df, "val-blocks")
+
+    chunk_size = 250_000
+    for i, start in enumerate(range(0, len(train_df), chunk_size), start=1):
+        save_dataset(train_df.iloc[start : start + chunk_size], f"train_chunks/train_chunk_{i}")
+
+
+if __name__ == "__main__":
+    main()

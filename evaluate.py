@@ -1,206 +1,393 @@
-from tqdm import tqdm
-import numpy as np
-from matplotlib.colors import LogNorm
-import torch
-from torch.utils.data import DataLoader
-import models.feed_forward as models
+"""Evaluate the canonical CLARE and Continuous models on validation and storm test sets."""
+
+import argparse
 import json
-import matplotlib.pyplot as plt
 import os
+from datetime import datetime, timezone
+from pathlib import Path
+
 import datasets
-import scipy
+import numpy as np
+import pandas as pd
+import torch
+from sklearn.metrics import accuracy_score, f1_score, r2_score
+
 import constants
-from sklearn.metrics import r2_score, mean_squared_error
+import models.feed_forward as models
 
-# --------- CONFIG -----------------
-model_name = '1_47'
-dataset = "test-normal" # test-storm or test-normal
-# -------------------------
+BASE_MODEL_NAME = "2"
+TE_MIN_K = 0.0
+TE_BIN_WIDTH_K = 100.0
+TE_NUM_CLASSES = 150
+TE_MAX_K_EXCLUSIVE = 15000.0
+SOFT_TARGET_SIGMA_K = 100.0
+CENTRAL_COVERAGE_LEVELS = (0.50, 0.80, 0.90, 0.95)
 
-
-# Setting up columns
-input_columns = ['Altitude', 'GCLAT', 'GCLON', 'ILAT', 'GLAT', 'GMLT', 'XXLAT', 'XXLON', 'AL_index_0', 'AL_index_1', 'AL_index_2', 'AL_index_3', 'AL_index_4', 'AL_index_5', 'AL_index_6', 'AL_index_7', 'AL_index_8', 'AL_index_9', 'AL_index_10', 'AL_index_11', 'AL_index_12', 'AL_index_13', 'AL_index_14', 'AL_index_15', 'AL_index_16', 'AL_index_17', 'AL_index_18', 'AL_index_19', 'AL_index_20', 'AL_index_21', 'AL_index_22', 'AL_index_23', 'AL_index_24', 'AL_index_25', 'AL_index_26', 'AL_index_27', 'AL_index_28', 'AL_index_29', 'AL_index_30', 'SYM_H_0', 'SYM_H_1', 'SYM_H_2', 'SYM_H_3', 'SYM_H_4', 'SYM_H_5', 'SYM_H_6', 'SYM_H_7', 'SYM_H_8', 'SYM_H_9', 'SYM_H_10', 'SYM_H_11', 'SYM_H_12', 'SYM_H_13', 'SYM_H_14', 'SYM_H_15', 'SYM_H_16', 'SYM_H_17', 'SYM_H_18', 'SYM_H_19', 'SYM_H_20', 'SYM_H_21', 'SYM_H_22', 'SYM_H_23', 'SYM_H_24', 'SYM_H_25', 'SYM_H_26', 'SYM_H_27', 'SYM_H_28', 'SYM_H_29', 'SYM_H_30', 'SYM_H_31', 'SYM_H_32', 'SYM_H_33', 'SYM_H_34', 'SYM_H_35', 'SYM_H_36', 'SYM_H_37', 'SYM_H_38', 'SYM_H_39', 'SYM_H_40', 'SYM_H_41', 'SYM_H_42', 'SYM_H_43', 'SYM_H_44', 'SYM_H_45', 'SYM_H_46', 'SYM_H_47', 'SYM_H_48', 'SYM_H_49', 'SYM_H_50', 'SYM_H_51', 'SYM_H_52', 'SYM_H_53', 'SYM_H_54', 'SYM_H_55', 'SYM_H_56', 'SYM_H_57', 'SYM_H_58', 'SYM_H_59', 'SYM_H_60', 'SYM_H_61', 'SYM_H_62', 'SYM_H_63', 'SYM_H_64', 'SYM_H_65', 'SYM_H_66', 'SYM_H_67', 'SYM_H_68', 'SYM_H_69', 'SYM_H_70', 'SYM_H_71', 'SYM_H_72', 'SYM_H_73', 'SYM_H_74', 'SYM_H_75', 'SYM_H_76', 'SYM_H_77', 'SYM_H_78', 'SYM_H_79', 'SYM_H_80', 'SYM_H_81', 'SYM_H_82', 'SYM_H_83', 'SYM_H_84', 'SYM_H_85', 'SYM_H_86', 'SYM_H_87', 'SYM_H_88', 'SYM_H_89', 'SYM_H_90', 'SYM_H_91', 'SYM_H_92', 'SYM_H_93', 'SYM_H_94', 'SYM_H_95', 'SYM_H_96', 'SYM_H_97', 'SYM_H_98', 'SYM_H_99', 'SYM_H_100', 'SYM_H_101', 'SYM_H_102', 'SYM_H_103', 'SYM_H_104', 'SYM_H_105', 'SYM_H_106', 'SYM_H_107', 'SYM_H_108', 'SYM_H_109', 'SYM_H_110', 'SYM_H_111', 'SYM_H_112', 'SYM_H_113', 'SYM_H_114', 'SYM_H_115', 'SYM_H_116', 'SYM_H_117', 'SYM_H_118', 'SYM_H_119', 'SYM_H_120', 'SYM_H_121', 'SYM_H_122', 'SYM_H_123', 'SYM_H_124', 'SYM_H_125', 'SYM_H_126', 'SYM_H_127', 'SYM_H_128', 'SYM_H_129', 'SYM_H_130', 'SYM_H_131', 'SYM_H_132', 'SYM_H_133', 'SYM_H_134', 'SYM_H_135', 'SYM_H_136', 'SYM_H_137', 'SYM_H_138', 'SYM_H_139', 'SYM_H_140', 'SYM_H_141', 'SYM_H_142', 'SYM_H_143', 'SYM_H_144', 'f107_index_0', 'f107_index_1', 'f107_index_2', 'f107_index_3', 'Kp_index']
-output_columns = ['Te1']
-all_columns = input_columns + output_columns
-
-
-# Model
-input_size = len(input_columns)
-hidden_size = 2048
-output_size = 150
-model = models.FeedForwardNetwork(input_size, hidden_size, output_size).to("cuda")
-model.load_state_dict(torch.load(f'checkpoints/{model_name}.pth'))
-model.eval()  # Set the model to evaluation mode
-
-# Load dataset
-test_ds = datasets.Dataset.load_from_disk(f"dataset/processed_dataset/{dataset}")
-test_ds = test_ds.remove_columns(['Ne1', 'Pv1', 'Te2', 'Ne2', 'Pv2', 'Te3', 'Ne3', 'Pv3', 'I1', 'I2', 'I3'])
-
-
-def normalize_batch(batch):
-    for col, norm_func in constants.NORMALIZATIONS.items():
-        batch[col] = norm_func(batch[col])
-    return batch
-
-test_ds = test_ds.map(normalize_batch, batched=True, batch_size=10000, num_proc=os.cpu_count())
-
-# Solar indices
-columns_to_normalize = [col for col in input_columns if col.startswith('AL_index') or col.startswith('SYM_H') or col.startswith('f107_index')]
-index_groups = {
-    'AL_index': [col for col in columns_to_normalize if col.startswith('AL_index')],
-    'SYM_H': [col for col in columns_to_normalize if col.startswith('SYM_H')],
-    'f107_index': [col for col in columns_to_normalize if col.startswith('f107_index')]
+RAW_INPUT_COLUMNS = [
+    "Altitude",
+    "GCLAT",
+    "GCLON",
+    "ILAT",
+    "GLAT",
+    "GMLT",
+    "XXLAT",
+    "XXLON",
+    *[f"AL_index_{i}" for i in range(31)],
+    *[f"SYM_H_{i}" for i in range(145)],
+    *[f"f107_index_{i}" for i in range(4)],
+    "Kp_index",
+]
+INPUT_COLUMNS = [
+    "Altitude",
+    "GCLAT",
+    "GCLON_sin",
+    "GCLON_cos",
+    "ILAT",
+    "GLAT",
+    "GMLT_sin",
+    "GMLT_cos",
+    "XXLAT",
+    "XXLON_sin",
+    "XXLON_cos",
+    *[f"AL_index_{i}" for i in range(31)],
+    *[f"SYM_H_{i}" for i in range(145)],
+    *[f"f107_index_{i}" for i in range(4)],
+    "Kp_index",
+]
+GROUP_COLUMNS = {
+    "AL_index": [f"AL_index_{i}" for i in range(31)],
+    "SYM_H": [f"SYM_H_{i}" for i in range(145)],
+    "f107_index": [f"f107_index_{i}" for i in range(4)],
 }
-# Calculate mean and std for each group
-means, stds = {}, {}
-stats_file = f'checkpoints/{model_name}_norm_stats.json'
 
-if os.path.exists(stats_file):
-    print(f"Loading existing normalization stats from {stats_file}")
-    with open(stats_file, 'r') as f:
-        stats = json.load(f)
-        means = stats['mean']
-        stds = stats['std']
 
-# Apply normalization to all columns in group at once
-group_cols = [col for cols in index_groups.values() for col in cols]
-def normalize_group(batch):
-    for col in group_cols:
-        # Get the group name from the column name (e.g. 'AL_index_1' -> 'AL_index')
-        group_name = '_'.join(col.split('_')[:-1]) if col.split('_')[-1].isdigit() else col
-        # Convert batch[col] to numpy array before arithmetic operations
-        values = np.array(batch[col], dtype=np.float32)
-        batch[col] = (values - means[group_name]) / stds[group_name]
-    return batch
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--seed", type=int, default=int(os.environ.get("SPLIT_SEED", 0)))
+    parser.add_argument("--block-minutes", type=int, default=int(os.environ.get("BLOCK_MINUTES", 212)))
+    parser.add_argument("--train-seed", type=int, default=int(os.environ.get("TRAIN_SEED", 0)))
+    parser.add_argument("--batch-size", type=int, default=2048)
+    parser.add_argument("--dataset-root", type=Path, default=Path("dataset"))
+    parser.add_argument("--checkpoints-dir", type=Path, default=Path("checkpoints"))
+    parser.add_argument("--output", type=Path, default=Path("evaluation_outputs/paper_statistics.json"))
+    return parser.parse_args()
 
-test_ds = test_ds.map(normalize_group, batched=True, batch_size=10000, num_proc=os.cpu_count())
 
-# Convert to tensor
-def convert_to_tensor(row):
-    input_ids = torch.tensor([v for k,v in row.items() if k in input_columns])
-    label = torch.tensor([v for k,v in row.items() if k in output_columns])
+def load_json(path):
+    with path.open("r", encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def load_state_dict(path):
+    state = torch.load(path, map_location="cpu", weights_only=True)
+    if isinstance(state, dict) and "model_state_dict" in state:
+        state = state["model_state_dict"]
+    if not isinstance(state, dict):
+        raise TypeError(f"Unsupported checkpoint format: {path}")
+    return state
+
+
+def model_parameter_count(state_dict):
+    return int(sum(value.numel() for value in state_dict.values() if torch.is_tensor(value)))
+
+
+def prepare_features(batch, means, stds):
+    values = {key: np.asarray(value) for key, value in batch.items()}
+    missing = set(RAW_INPUT_COLUMNS + ["Te1"]) - set(values)
+    if missing:
+        raise ValueError(f"Evaluation batch is missing columns: {sorted(missing)}")
+
+    for column, function in constants.NORMALIZATIONS.items():
+        values[column] = function(values[column])
+    for column, function in constants.CIRCULAR_ENCODINGS.items():
+        values.update(function(values[column]))
+    for group_name, columns in GROUP_COLUMNS.items():
+        for column in columns:
+            values[column] = (
+                (np.asarray(values[column], dtype=np.float32) - means[group_name])
+                / stds[group_name]
+            ).astype(np.float32)
+
+    x = np.column_stack([values[column] for column in INPUT_COLUMNS]).astype(np.float32)
+    y = np.asarray(values["Te1"], dtype=np.float32)
+    if x.shape[1] != len(INPUT_COLUMNS) or not np.isfinite(x).all() or not np.isfinite(y).all():
+        raise ValueError("Invalid evaluation inputs after preprocessing")
+    return x, y
+
+
+def point_metrics(predicted, observed):
+    predicted = np.asarray(predicted, dtype=np.float64)
+    observed = np.asarray(observed, dtype=np.float64)
+    error = predicted - observed
     return {
-        "input_ids": input_ids, 
-        "label": label,
-        "DateTimeFormatted": row['DateTimeFormatted']
+        "n": int(len(observed)),
+        "rmse_k": float(np.sqrt(np.mean(error**2))),
+        "mae_k": float(np.mean(np.abs(error))),
+        "bias_k": float(np.mean(error)),
+        "r2": float(r2_score(observed, predicted)),
+        "pearson_r": (
+            float(np.corrcoef(observed, predicted)[0, 1])
+            if np.std(observed) > 0 and np.std(predicted) > 0
+            else None
+        ),
+        "within_10pct": float(np.mean(np.abs(error) <= 0.10 * np.abs(observed))),
     }
-test_ds = test_ds.map(convert_to_tensor, num_proc=os.cpu_count(), remove_columns=all_columns)
 
-def custom_collate(batch):
-    input_ids = torch.stack([torch.tensor(item['input_ids']) for item in batch])
-    labels = torch.stack([torch.tensor(item['label']) for item in batch])
-    datetimes = [item['DateTimeFormatted'] for item in batch]
+
+def evaluate_continuous(model, ds, means, stds, batch_size, device):
+    predictions = []
+    observations = []
+    with torch.no_grad():
+        for batch in ds.iter(batch_size=batch_size):
+            x, y = prepare_features(batch, means, stds)
+            output = model(torch.from_numpy(x).to(device)).squeeze(-1)
+            predictions.append(output.cpu().numpy())
+            observations.append(y)
+    predicted = np.concatenate(predictions)
+    observed = np.concatenate(observations)
+    metrics = point_metrics(predicted, observed)
+    metrics["mse_k2"] = float(metrics["rmse_k"] ** 2)
+    return metrics
+
+
+def evaluate_clare(model, ds, means, stds, batch_size, device):
+    centers = torch.arange(TE_NUM_CLASSES, device=device, dtype=torch.float32) * TE_BIN_WIDTH_K + 50.0
+    predictions = []
+    observations = []
+    hard_predictions = []
+    hard_targets = []
+
+    soft_ce_sum = 0.0
+    crps_sum = 0.0
+    entropy_sum = 0.0
+    predictive_std_sum = 0.0
+    max_probability_sum = 0.0
+    coverage_counts = {level: 0 for level in CENTRAL_COVERAGE_LEVELS}
+    total = 0
+
+    with torch.no_grad():
+        for batch in ds.iter(batch_size=batch_size):
+            x, y_np = prepare_features(batch, means, stds)
+            y = torch.from_numpy(y_np).to(device)
+            logits = model(torch.from_numpy(x).to(device))
+            probabilities = torch.softmax(logits, dim=1)
+            log_probabilities = torch.log_softmax(logits, dim=1)
+
+            prediction = probabilities @ centers
+            hard_prediction = probabilities.argmax(dim=1)
+            hard_target = torch.floor((y - TE_MIN_K) / TE_BIN_WIDTH_K).long()
+            if (hard_target < 0).any() or (hard_target >= TE_NUM_CLASSES).any():
+                raise ValueError("Te1 is outside the fixed CLARE bin range [0, 15000) K")
+
+            soft_targets = torch.softmax(
+                -0.5 * ((centers.unsqueeze(0) - y.unsqueeze(1)) / SOFT_TARGET_SIGMA_K) ** 2,
+                dim=1,
+            )
+            soft_ce = -(soft_targets * log_probabilities).sum(dim=1)
+
+            cdf = probabilities.cumsum(dim=1)
+            indicator = (centers.unsqueeze(0) >= y.unsqueeze(1)).to(probabilities.dtype)
+            crps = TE_BIN_WIDTH_K * torch.square(cdf - indicator).sum(dim=1)
+
+            entropy = -(probabilities * torch.log(probabilities.clamp_min(1e-12))).sum(dim=1)
+            variance = (probabilities * torch.square(centers.unsqueeze(0) - prediction.unsqueeze(1))).sum(dim=1)
+            predictive_std = torch.sqrt(variance.clamp_min(0.0))
+            max_probability = probabilities.max(dim=1).values
+
+            for level in CENTRAL_COVERAGE_LEVELS:
+                tail = (1.0 - level) / 2.0
+                lower_index = (cdf >= tail).to(torch.int64).argmax(dim=1)
+                upper_index = (cdf >= 1.0 - tail).to(torch.int64).argmax(dim=1)
+                lower_edge = TE_MIN_K + lower_index.to(torch.float32) * TE_BIN_WIDTH_K
+                upper_edge = TE_MIN_K + (upper_index.to(torch.float32) + 1.0) * TE_BIN_WIDTH_K
+                coverage_counts[level] += int(((y >= lower_edge) & (y <= upper_edge)).sum().item())
+
+            n = y.shape[0]
+            total += n
+            soft_ce_sum += float(soft_ce.sum().item())
+            crps_sum += float(crps.sum().item())
+            entropy_sum += float(entropy.sum().item())
+            predictive_std_sum += float(predictive_std.sum().item())
+            max_probability_sum += float(max_probability.sum().item())
+
+            predictions.append(prediction.cpu().numpy())
+            observations.append(y_np)
+            hard_predictions.append(hard_prediction.cpu().numpy())
+            hard_targets.append(hard_target.cpu().numpy())
+
+    predicted = np.concatenate(predictions)
+    observed = np.concatenate(observations)
+    hard_predictions = np.concatenate(hard_predictions)
+    hard_targets = np.concatenate(hard_targets)
+
+    metrics = point_metrics(predicted, observed)
+    metrics.update(
+        {
+            "soft_target_cross_entropy": soft_ce_sum / total,
+            "hard_bin_accuracy": float(accuracy_score(hard_targets, hard_predictions)),
+            "macro_f1": float(f1_score(hard_targets, hard_predictions, average="macro", zero_division=0)),
+            "crps_k": crps_sum / total,
+            "mean_predictive_entropy_nats": entropy_sum / total,
+            "mean_predictive_std_k": predictive_std_sum / total,
+            "mean_max_bin_probability": max_probability_sum / total,
+            "central_interval_coverage": {
+                f"{int(level * 100)}pct": coverage_counts[level] / total
+                for level in CENTRAL_COVERAGE_LEVELS
+            },
+        }
+    )
+    return metrics
+
+
+def timestamp_string(value):
+    if pd.isna(value):
+        return None
+    return pd.Timestamp(value).isoformat()
+
+
+def dataset_context(dataset_dir, block_minutes, split_seed, val_ds, storm_ds):
+    summary_path = dataset_dir / f"split_summary_{block_minutes}m_s{split_seed}.csv"
+    assignment_path = dataset_dir / f"block_assignment_{block_minutes}m_s{split_seed}.csv"
+    summary = pd.read_csv(summary_path)
+    assignment = pd.read_csv(assignment_path)
+
+    expected_rows = {"val": len(val_ds), "test-storm": len(storm_ds)}
+    summary_index = summary.set_index("split")
+    for name, count in expected_rows.items():
+        if int(summary_index.loc[name, "n_samples"]) != count:
+            raise ValueError(f"Split summary count mismatch for {name}")
+
+    splits = {}
+    for _, row in summary.iterrows():
+        splits[str(row["split"])] = {
+            "n_samples": int(row["n_samples"]),
+            "n_blocks": int(row["n_blocks"]),
+            "time_start": timestamp_string(row["time_start"]),
+            "time_end": timestamp_string(row["time_end"]),
+        }
+
     return {
-        'input_ids': input_ids,
-        'label': labels,
-        'DateTimeFormatted': datetimes
+        "dataset_dir": str(dataset_dir),
+        "block_minutes": int(block_minutes),
+        "split_seed": int(split_seed),
+        "full_dataset_definition": "all filtered rows after NaN removal, before storm holdout and embargo removal",
+        "splits": splits,
+        "development": {
+            "n_samples": int(splits["train"]["n_samples"] + splits["val"]["n_samples"]),
+            "n_blocks": int(len(assignment)),
+            "train_fraction": float(splits["train"]["n_samples"] / (splits["train"]["n_samples"] + splits["val"]["n_samples"])),
+        },
+        "storm_window": {
+            "start_inclusive": timestamp_string(summary["storm_start"].iloc[0]),
+            "end_exclusive": timestamp_string(summary["storm_end_exclusive"].iloc[0]),
+        },
+        "post_storm_embargo_end_exclusive": timestamp_string(summary["post_storm_embargo_end_exclusive"].iloc[0]),
     }
 
-test_loader = DataLoader(test_ds, batch_size=512, shuffle=False, num_workers=os.cpu_count(), collate_fn=custom_collate)
 
-predictions, true_values, entropy_list, times = [], [], [], []
+def clean_for_json(value):
+    if isinstance(value, dict):
+        return {key: clean_for_json(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [clean_for_json(item) for item in value]
+    if isinstance(value, (np.integer,)):
+        return int(value)
+    if isinstance(value, (np.floating, float)):
+        value = float(value)
+        return value if np.isfinite(value) else None
+    return value
 
-with torch.no_grad():
-    for batch in tqdm(test_loader, desc="Evaluating"):
-        x = batch["input_ids"].to("cuda")
-        y = batch["label"].to("cuda")
 
-        # Forward pass
-        logits = model(x)
+def main():
+    args = parse_args()
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    dataset_dir = args.dataset_root / f"processed_dataset_blocksplit_{args.block_minutes}m_s{args.seed}"
+    val_ds = datasets.Dataset.load_from_disk(str(dataset_dir / "val-blocks"))
+    storm_ds = datasets.Dataset.load_from_disk(str(dataset_dir / "test-storm"))
 
-        # Calculate entropy of softmaxed logits
-        softmaxed = torch.softmax(logits, dim=1)  # Apply softmax to logits
-        entropy = -torch.sum(softmaxed * torch.log(softmaxed + 1e-10), dim=1).cpu().numpy()  # Calculate entropy
-        entropy_list.extend(entropy)  # Use extend instead of append to flatten the array
+    stats_path = args.checkpoints_dir / f"{BASE_MODEL_NAME}_{args.block_minutes}m_s{args.seed}_norm_stats.json"
+    stats = load_json(stats_path)
+    means = stats["mean"]
+    stds = stats["std"]
 
-        y_pred = torch.argmax(logits, dim=1) * 100 + 50
-        y_true = y
+    model_prefix = f"{BASE_MODEL_NAME}_{args.block_minutes}m_s{args.seed}_ts{args.train_seed}"
+    specs = {
+        "CLARE": {
+            "checkpoint": args.checkpoints_dir / f"{model_prefix}.pth",
+            "metadata": args.checkpoints_dir / f"{model_prefix}_metadata.json",
+            "output_dim": TE_NUM_CLASSES,
+        },
+        "Continuous": {
+            "checkpoint": args.checkpoints_dir / f"{model_prefix}_continuous.pth",
+            "metadata": args.checkpoints_dir / f"{model_prefix}_continuous_metadata.json",
+            "output_dim": 1,
+        },
+    }
 
-        predictions.extend(y_pred.flatten().tolist())
-        true_values.extend(y_true.flatten().tolist())
-        times.extend(batch['DateTimeFormatted'])
+    models_loaded = {}
+    model_context = {}
+    for label, spec in specs.items():
+        state = load_state_dict(spec["checkpoint"])
+        model = models.FeedForwardNetwork(len(INPUT_COLUMNS), 2048, spec["output_dim"])
+        model.load_state_dict(state)
+        model.to(device).eval()
+        metadata = load_json(spec["metadata"])
+        if int(metadata.get("input_size", len(INPUT_COLUMNS))) != len(INPUT_COLUMNS):
+            raise ValueError(f"{label} metadata input size does not match evaluator")
+        models_loaded[label] = model
+        model_context[label] = {
+            "checkpoint": str(spec["checkpoint"]),
+            "metadata": str(spec["metadata"]),
+            "normalization_stats": str(stats_path),
+            "parameter_count": model_parameter_count(state),
+            "selected_step": metadata.get("total_steps"),
+            "selected_epoch": metadata.get("epoch"),
+            "selection_criterion": metadata.get("selection_criterion"),
+            "mode": metadata.get("mode"),
+        }
 
-deviations = [pred - true for pred, true in zip(predictions, true_values)]
+    split_datasets = {"validation": val_ds, "test-storm": storm_ds}
+    results = {}
+    for split_name, ds in split_datasets.items():
+        print(f"Evaluating {split_name}: {len(ds):,} rows")
+        results[split_name] = {
+            "CLARE": evaluate_clare(models_loaded["CLARE"], ds, means, stds, args.batch_size, device),
+            "Continuous": evaluate_continuous(models_loaded["Continuous"], ds, means, stds, args.batch_size, device),
+        }
 
-# Calculate R^2 score
-r2 = r2_score(true_values, predictions)
-print(f"R^2 Score: {r2:.4f}")
+    output = {
+        "generated_utc": datetime.now(timezone.utc).isoformat(),
+        "source_of_truth": "Canonical paper evaluation statistics for CLARE and Continuous",
+        "dataset": dataset_context(dataset_dir, args.block_minutes, args.seed, val_ds, storm_ds),
+        "target": {
+            "quantity": "electron temperature",
+            "units": "K",
+            "range_k": [TE_MIN_K, TE_MAX_K_EXCLUSIVE],
+            "clare_bins": TE_NUM_CLASSES,
+            "clare_bin_width_k": TE_BIN_WIDTH_K,
+            "clare_soft_target_sigma_k": SOFT_TARGET_SIGMA_K,
+            "clare_scalar_decoder": "softmax-weighted expected bin center",
+        },
+        "training_seed": int(args.train_seed),
+        "models": model_context,
+        "results": results,
+    }
 
-# Calculate RMSE
-rmse = np.sqrt(mean_squared_error(true_values, predictions))
-print(f"RMSE: {rmse:.4f}")
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    with args.output.open("w", encoding="utf-8") as handle:
+        json.dump(clean_for_json(output), handle, indent=2, allow_nan=False)
 
-# Calculate entropy metrics
-mean_entropy = np.mean(entropy_list)
-print(f"\nEntropy Metrics:")
-print(f"Mean entropy across test set: {mean_entropy:.4f}")
+    print(f"Saved paper statistics to {args.output}")
+    for split_name, split_results in results.items():
+        print(f"\n{split_name}")
+        for label, metrics in split_results.items():
+            print(
+                f"  {label}: RMSE={metrics['rmse_k']:.3f} K, "
+                f"MAE={metrics['mae_k']:.3f} K, "
+                f"R2={metrics['r2']:.5f}, "
+                f"within10={100.0 * metrics['within_10pct']:.3f}%"
+            )
 
-# Calculate percentages within specified absolute deviations
-thresholds = [100, 200, 300, 500, 1000, 2000, 5000]
-percentages = [
-    sum(abs(dev) <= threshold for dev in deviations) / len(deviations) * 100
-    for threshold in thresholds
-]
 
-# Calculate percentages within specified relative deviations
-relative_thresholds = [5, 10, 15, 20]
-relative_percentages = [
-    sum(abs(dev) / true * 100 <= threshold for dev, true in zip(deviations, true_values)) / len(deviations) * 100
-    for threshold in relative_thresholds
-]
-
-# Plot histogram
-plt.figure(figsize=(12, 8))
-plt.hist(deviations, bins=50, edgecolor='black')
-plt.xlabel('Deviation from Ground Truth')
-plt.ylabel('Frequency')
-plt.title('Distribution of Model Predictions Deviation')
-
-# Add text box with percentages and metrics
-text = "\n".join([
-    f"R² Score: {r2:.4f}",
-    f"RMSE: {rmse:.4f}",
-    f"Mean entropy: {mean_entropy:.4f}",
-    "\n"  # Add empty line
-] + [
-    f"Within {threshold}: {percentage:.2f}%"
-    for threshold, percentage in zip(thresholds, percentages)
-] + ["\n"] + [  # Add an empty line between absolute and relative thresholds
-    f"Within {threshold}%: {percentage:.2f}%"
-    for threshold, percentage in zip(relative_thresholds, relative_percentages)
-])
-print(text)
-plt.text(0.95, 0.95, text, transform=plt.gca().transAxes, 
-         verticalalignment='top', horizontalalignment='right',
-         bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
-
-plt.tight_layout()
-
-# Save the plot
-plt.savefig(f'./checkpoints/{model_name}_{dataset}_plot.png')
-plt.close()  # Close the figure to free up memory
-
-# Plot absolute deviation vs ground truth
-plt.figure(figsize=(10, 8))
-
-h = plt.hist2d(true_values, deviations, bins=100, norm=LogNorm(), cmap='viridis')
-plt.colorbar(h[3], label='Obs#')
-
-plt.xlabel('Te$_{obs}$ [K]')
-plt.ylabel('Te$_{model}$ - Te$_{obs}$ [K]')
-plt.title('Model Deviation vs Ground Truth')
-
-# Add mean deviation line and print the mean deviation value
-bin_means, bin_edges, _ = scipy.stats.binned_statistic(true_values, deviations,
-                                                statistic='mean', bins=50)
-bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
-plt.plot(bin_centers, bin_means, 'r-', linewidth=2, label='Mean Deviation')
-plt.legend()
-
-# Calculate and print the mean deviation value
-mean_deviation = np.mean(deviations)
-print(f"Mean Deviation: {mean_deviation:.3f}")
-
-plt.tight_layout()
-plt.savefig(f'./checkpoints/{model_name}_{dataset}_deviation_plot.png', dpi=300)
-plt.close()
+if __name__ == "__main__":
+    main()
