@@ -1,76 +1,86 @@
-"""
-tests/test_baselines.py - Unit tests for baseline models (Kutiev et al., 2002).
-"""
+"""Checks against Kutiev et al. (2002), equations (1)-(2), Tables 2-3."""
 
 import unittest
+
 import numpy as np
-from baselines.kutiev_2002 import predict_kutiev_2002, evaluate_kutiev_metrics
+
+from baselines.kutiev_2002 import (
+    EARTH_RADIUS_KM,
+    EQUATORIAL,
+    MAX_REGRESSION_ALTITUDE_KM,
+    MIDLATITUDE,
+    evaluate_kutiev_metrics,
+    predict_kutiev_2002,
+)
 
 
 class TestBaselines(unittest.TestCase):
-    """Verifies physical consistency and mathematical mechanics of baseline models."""
+    def test_published_tables_are_transcribed_exactly(self):
+        self.assertEqual(EQUATORIAL, {
+            "DNE": (2778.0, 0.63, 2.2), "DSE": (3114.0, 0.50, 0.4),
+            "NNE": (1536.0, 0.17, 1.3), "NSE": (1676.0, 0.14, 0.7),
+        })
+        self.assertEqual(MIDLATITUDE, {
+            "DNM": (5326.0, 0.24, 18.9), "DSM": (4558.0, 0.37, 20.6),
+            "NNM": (2161.0, 0.10, 19.0), "NSM": (2077.0, 0.11, 19.2),
+        })
 
-    def test_kutiev_altitude_monotonicity(self):
-        """Tests that electron temperature increases monotonically with altitude in plasmasphere."""
-        alts = np.array([1000.0, 2500.0, 5000.0, 8000.0], dtype=np.float32)
-        ilat = np.full_like(alts, 35.0)
-        gmlt = np.full_like(alts, 14.0)
+    def test_published_equatorial_equation_and_coefficients(self):
+        # DNE, Table 2: Te = (2778 + 0.63 alt) + 2.2 glat^2
+        self.assertAlmostEqual(float(predict_kutiev_2002(3000, 10, 12)), 4888.0)
+        # NSE, Table 2: Te = (1676 + 0.14 alt) + 0.7 glat^2
+        self.assertAlmostEqual(float(predict_kutiev_2002(3000, -10, 23)), 2166.0)
 
-        preds = predict_kutiev_2002(alts, ilat, gmlt)
+        cases = [
+            (10, 12, 2778.0 + 0.63 * 3000 + 2.2 * 100),
+            (-10, 12, 3114.0 + 0.50 * 3000 + 0.4 * 100),
+            (10, 23, 1536.0 + 0.17 * 3000 + 1.3 * 100),
+            (-10, 23, 1676.0 + 0.14 * 3000 + 0.7 * 100),
+        ]
+        for glat, gmlt, expected in cases:
+            self.assertAlmostEqual(float(predict_kutiev_2002(3000, glat, gmlt)), expected)
 
-        self.assertEqual(len(preds), 4)
-        # Verify strictly increasing with height
-        for i in range(len(preds) - 1):
-            self.assertGreater(preds[i + 1], preds[i])
-        # Base temperature around 2000-3500 K, topside around 5000-9000 K
-        self.assertGreaterEqual(preds[0], 1500.0)
-        self.assertLessEqual(preds[-1], 12000.0)
+    def test_published_midlatitude_equation_and_coefficients(self):
+        alt, glat = 1000.0, 45.0
+        l_shell = (EARTH_RADIUS_KM + alt) / (EARTH_RADIUS_KM * np.cos(np.deg2rad(glat)) ** 2)
+        expected = 5326.0 + 0.24 * alt + 18.9 * (l_shell ** 5 - 32.0)
+        self.assertAlmostEqual(float(predict_kutiev_2002(alt, glat, 12)), expected, places=3)
 
-    def test_kutiev_diurnal_variation(self):
-        """Tests day vs night electron temperature variation (daytime > nighttime)."""
-        alt = 3000.0
-        ilat = 40.0
-        gmlt_day = 14.0
-        gmlt_night = 2.0
+        cases = [
+            (45, 12, 5326.0 + 0.24 * alt + 18.9 * (l_shell ** 5 - 32.0)),
+            (-45, 12, 4558.0 + 0.37 * alt + 20.6 * (l_shell ** 5 - 32.0)),
+            (45, 23, 2161.0 + 0.10 * alt + 19.0 * (l_shell ** 5 - 32.0)),
+            (-45, 23, 2077.0 + 0.11 * alt + 19.2 * (l_shell ** 5 - 32.0)),
+        ]
+        for glat, gmlt, expected in cases:
+            self.assertAlmostEqual(float(predict_kutiev_2002(alt, glat, gmlt)), expected, places=3)
 
-        t_day = predict_kutiev_2002(alt, ilat, gmlt_day)
-        t_night = predict_kutiev_2002(alt, ilat, gmlt_night)
+    def test_rejects_regions_not_defined_by_the_paper(self):
+        predictions = predict_kutiev_2002(
+            [999, 6371, 3000, 3000, 3000, 3000, 3000],
+            [0, 0, 0, 70, 0, 0, 0],
+            [12, 12, 18, 12, np.nan, -1, 24],
+        )
+        self.assertTrue(np.isnan(predictions).all())
+        self.assertEqual(MAX_REGRESSION_ALTITUDE_KM, 6370.0)
 
-        self.assertGreater(float(t_day), float(t_night))
+    def test_published_l_shell_boundaries(self):
+        alt = 1000.0
+        radius_ratio = (EARTH_RADIUS_KM + alt) / EARTH_RADIUS_KM
+        glat_l2 = np.rad2deg(np.arccos(np.sqrt(radius_ratio / 2.0)))
+        glat_l3 = np.rad2deg(np.arccos(np.sqrt(radius_ratio / 3.0)))
+        self.assertAlmostEqual(float(predict_kutiev_2002(alt, glat_l2, 12)), 5326.0 + 0.24 * alt)
+        self.assertTrue(np.isfinite(predict_kutiev_2002(alt, glat_l3, 12)))
+        self.assertTrue(np.isnan(predict_kutiev_2002(alt, glat_l3 + 0.01, 12)))
 
-    def test_kutiev_latitudinal_variation(self):
-        """Tests that high latitude has higher base temperature than equatorial."""
-        alt = 2000.0
-        gmlt = 12.0
-        t_high_lat = predict_kutiev_2002(alt, 60.0, gmlt)
-        t_equator = predict_kutiev_2002(alt, 5.0, gmlt)
-
-        self.assertGreater(float(t_high_lat), float(t_equator))
-
-    def test_kutiev_kp_modulation(self):
-        """Tests that elevated Kp moderately increases electron temperature."""
-        alt = 4000.0
-        ilat = 45.0
-        gmlt = 15.0
-
-        t_quiet = predict_kutiev_2002(alt, ilat, gmlt, kp=1.0)
-        t_storm = predict_kutiev_2002(alt, ilat, gmlt, kp=6.0)
-
-        self.assertGreater(float(t_storm), float(t_quiet))
-
-    def test_evaluate_kutiev_metrics(self):
-        """Tests evaluation metrics aggregation for Kutiev predictions."""
-        y_true = np.array([2500.0, 3000.0, 4000.0, 5000.0], dtype=np.float32)
-        y_pred = np.array([2550.0, 2900.0, 4100.0, 4900.0], dtype=np.float32)
-
-        metrics = evaluate_kutiev_metrics(y_true, y_pred)
-        self.assertIn("r2", metrics)
-        self.assertIn("rmse", metrics)
-        self.assertIn("mae", metrics)
-        self.assertIn("acc_10", metrics)
-        self.assertGreater(metrics["r2"], 0.95)
+    def test_metrics_ignore_unsupported_samples(self):
+        metrics = evaluate_kutiev_metrics(
+            np.array([2500.0, 3000.0, 4000.0, 5000.0]),
+            np.array([2550.0, 2900.0, np.nan, 4900.0]),
+        )
+        self.assertEqual(metrics["n"], 3)
         self.assertEqual(metrics["acc_10"], 100.0)
 
-        # Empty array handling
-        empty_metrics = evaluate_kutiev_metrics(np.array([]), np.array([]))
-        self.assertEqual(empty_metrics["r2"], 0.0)
+
+if __name__ == "__main__":
+    unittest.main()

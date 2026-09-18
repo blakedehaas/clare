@@ -424,14 +424,14 @@ If you use TEMPEST or CLARE in your research, please cite:
 }
 
 @article{kutiev_analytical_2002,
-  title = {Analytical representation of the electron temperature distribution in the topside ionosphere and plasmasphere based on Akebono data},
+  title = {Analytical representation of the plasmasphere electron temperature distribution based on Akebono data},
   author = {Kutiev, I. and Oyama, K.-I. and Abe, T.},
   journal = {Journal of Geophysical Research: Space Physics},
   volume = {107},
   number = {A12},
-  pages = {SIA 10-1--SIA 10-9},
+  pages = {SMP 24-1--SMP 24-11},
   year = {2002},
-  doi = {10.1029/2001JA000185}
+  doi = {10.1029/2002JA009494}
 }
 ```
 
@@ -439,4 +439,4 @@ If you use TEMPEST or CLARE in your research, please cite:
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

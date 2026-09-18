@@ -112,7 +112,7 @@ def generate_kutiev_comparison_figure(
     sub_ds.set_format("torch")
 
     x_tensor = torch.tensor(np.array(sub_ds["input_ids"]), dtype=torch.float32, device=device)
-    y_true_k = np.array(sub_ds["label"], dtype=np.float32) * 100.0 + 50.0
+    y_true_k = np.array(sub_raw["Te1"], dtype=np.float32)
 
     with torch.no_grad():
         with torch.amp.autocast("cuda", dtype=torch.bfloat16, enabled=(device.type == "cuda")):
@@ -122,11 +122,16 @@ def generate_kutiev_comparison_figure(
 
     # Kutiev et al. (2002) predictions
     alt = np.array(sub_raw["Altitude"])
-    ilat = np.array(sub_raw["ILAT"])
+    glat = np.array(sub_raw["GLAT"])
     gmlt = np.array(sub_raw["GMLT"])
-    kp = np.array(sub_raw["Kp_index"])
+    pred_kutiev_k = predict_kutiev_2002(altitude=alt, glat=glat, gmlt=gmlt)
 
-    pred_kutiev_k = predict_kutiev_2002(altitude=alt, ilat=ilat, gmlt=gmlt, kp=kp)
+    # Compare both models on the domain actually defined by Kutiev et al. (2002).
+    covered = np.isfinite(pred_kutiev_k)
+    alt = alt[covered]
+    y_true_k = y_true_k[covered]
+    pred_tempest_k = pred_tempest_k[covered]
+    pred_kutiev_k = pred_kutiev_k[covered]
 
     m_tempest = {
         "r2": r2_score(y_true_k, pred_tempest_k),
