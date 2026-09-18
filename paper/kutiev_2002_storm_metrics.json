@@ -1,0 +1,18 @@
+{
+  "dataset_rows": 4200,
+  "full_test_storm_extrapolated": {
+    "n": 4200,
+    "r2": -11555855.937278688,
+    "rmse": 9354057.412088485,
+    "mae": 209675.50000197638,
+    "acc_10": 19.952380952380953
+  },
+  "paper_supported_subset": {
+    "n": 2800,
+    "r2": 0.14343067179186864,
+    "rmse": 2052.952446610699,
+    "mae": 1576.0561831229074,
+    "acc_10": 25.214285714285715
+  },
+  "warning": "The full-set result is a sensitivity analysis: it extrapolates beyond 6370 km and L=3 and assigns transition hours to the nearer published day/night sector."
+}

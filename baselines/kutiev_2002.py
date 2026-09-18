@@ -29,8 +29,20 @@ MIDLATITUDE = {
 }
 
 
-def predict_kutiev_2002(altitude: ArrayLike, glat: ArrayLike, gmlt: ArrayLike) -> np.ndarray:
-    """Return the paper's average ``Te`` in kelvin; unsupported inputs are NaN."""
+def predict_kutiev_2002(
+    altitude: ArrayLike,
+    glat: ArrayLike,
+    gmlt: ArrayLike,
+    *,
+    extrapolate: bool = False,
+) -> np.ndarray:
+    """Return average ``Te`` in kelvin.
+
+    By default, unsupported inputs are NaN. ``extrapolate=True`` is a
+    sensitivity analysis only: it extends the printed equations beyond their
+    altitude/L limits and assigns transition-hour samples to the nearer of the
+    published day and night sectors.
+    """
     alt, lat, lt = np.broadcast_arrays(
         np.asarray(altitude, dtype=float),
         np.asarray(glat, dtype=float),
@@ -38,16 +50,22 @@ def predict_kutiev_2002(altitude: ArrayLike, glat: ArrayLike, gmlt: ArrayLike) -
     )
     result = np.full(alt.shape, np.nan, dtype=float)
     l_shell = (EARTH_RADIUS_KM + alt) / (EARTH_RADIUS_KM * np.cos(np.deg2rad(lat)) ** 2)
-    day = (lt >= 9.0) & (lt <= 16.0)
-    night = (lt >= 22.0) | (lt <= 4.0)
+    if extrapolate:
+        distance_from_day = np.abs((lt - 12.5 + 12.0) % 24.0 - 12.0)
+        distance_from_night = np.abs((lt - 1.0 + 12.0) % 24.0 - 12.0)
+        day = distance_from_day <= distance_from_night
+        night = ~day
+    else:
+        day = (lt >= 9.0) & (lt <= 16.0)
+        night = (lt >= 22.0) | (lt <= 4.0)
     valid = (
         np.isfinite(alt + lat + lt)
         & (alt >= 1000.0)
-        & (alt <= MAX_REGRESSION_ALTITUDE_KM)
         & (lt >= 0.0)
         & (lt < 24.0)
-        & (l_shell <= 3.0)
     )
+    if not extrapolate:
+        valid &= (alt <= MAX_REGRESSION_ALTITUDE_KM) & (np.abs(lat) <= 70.0) & (l_shell <= 3.0)
 
     for is_day, prefix in ((day, "D"), (night, "N")):
         for north, hemisphere in ((lat >= 0.0, "N"), (lat < 0.0, "S")):

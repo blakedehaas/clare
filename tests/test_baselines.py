@@ -64,6 +64,14 @@ class TestBaselines(unittest.TestCase):
         self.assertTrue(np.isnan(predictions).all())
         self.assertEqual(MAX_REGRESSION_ALTITUDE_KM, 6370.0)
 
+    def test_explicit_extrapolation_covers_full_sensitivity_cohort(self):
+        predictions = predict_kutiev_2002(
+            [7000, 3000, 3000], [0, 0, 75], [18, 18, 12], extrapolate=True
+        )
+        self.assertTrue(np.isfinite(predictions).all())
+        # 18 MLT is nearer the published daytime sector than the nighttime sector.
+        self.assertAlmostEqual(float(predictions[1]), 2778.0 + 0.63 * 3000)
+
     def test_published_l_shell_boundaries(self):
         alt = 1000.0
         radius_ratio = (EARTH_RADIUS_KM + alt) / EARTH_RADIUS_KM
