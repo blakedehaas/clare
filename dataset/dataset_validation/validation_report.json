@@ -1,0 +1,23 @@
+{
+  "status": "PASS",
+  "dataset_dir": "processed_dataset_blocksplit_212m_s0",
+  "block_minutes": 212,
+  "split_seed": 0,
+  "splits": {
+    "train": {
+      "n_samples": 2927535,
+      "n_blocks": 19397
+    },
+    "val": {
+      "n_samples": 325351,
+      "n_blocks": 2160
+    },
+    "test-storm": {
+      "n_samples": 4200,
+      "n_blocks": 42
+    }
+  },
+  "storm_start": "1991-01-31T00:00:00",
+  "storm_end_exclusive": "1991-02-07T00:00:00",
+  "post_storm_embargo_end_exclusive": "1991-02-10T00:00:00"
+}

@@ -1,0 +1,157 @@
+{
+  "generated_utc": "2026-09-18T17:15:26.079448+00:00",
+  "source_of_truth": "Canonical paper evaluation statistics for CLARE and Continuous",
+  "dataset": {
+    "dataset_dir": "dataset/processed_dataset_blocksplit_212m_s0",
+    "block_minutes": 212,
+    "split_seed": 0,
+    "full_dataset_definition": "all filtered rows after NaN removal, before storm holdout and embargo removal",
+    "splits": {
+      "full-filtered": {
+        "n_samples": 3259830,
+        "n_blocks": 21620,
+        "time_start": "1990-01-08T12:05:00",
+        "time_end": "2001-12-30T04:57:00"
+      },
+      "train": {
+        "n_samples": 2927535,
+        "n_blocks": 19397,
+        "time_start": "1990-01-08T12:05:00",
+        "time_end": "2001-12-30T04:57:00"
+      },
+      "val": {
+        "n_samples": 325351,
+        "n_blocks": 2160,
+        "time_start": "1990-01-09T01:26:00",
+        "time_end": "2001-12-29T14:07:00"
+      },
+      "test-storm": {
+        "n_samples": 4200,
+        "n_blocks": 42,
+        "time_start": "1991-01-31T03:13:00",
+        "time_end": "1991-02-06T21:30:00"
+      },
+      "post-storm-embargo": {
+        "n_samples": 2744,
+        "n_blocks": 21,
+        "time_start": "1991-02-07T00:33:00",
+        "time_end": "1991-02-09T22:35:00"
+      }
+    },
+    "development": {
+      "n_samples": 3252886,
+      "n_blocks": 21557,
+      "train_fraction": 0.8999808170344734
+    },
+    "storm_window": {
+      "start_inclusive": "1991-01-31T00:00:00",
+      "end_exclusive": "1991-02-07T00:00:00"
+    },
+    "post_storm_embargo_end_exclusive": "1991-02-10T00:00:00"
+  },
+  "target": {
+    "quantity": "electron temperature",
+    "units": "K",
+    "range_k": [
+      0.0,
+      15000.0
+    ],
+    "clare_bins": 150,
+    "clare_bin_width_k": 100.0,
+    "clare_soft_target_sigma_k": 100.0,
+    "clare_scalar_decoder": "softmax-weighted expected bin center"
+  },
+  "training_seed": 0,
+  "models": {
+    "CLARE": {
+      "checkpoint": "checkpoints/2_212m_s0_ts0.pth",
+      "metadata": "checkpoints/2_212m_s0_ts0_metadata.json",
+      "normalization_stats": "checkpoints/2_212m_s0_norm_stats.json",
+      "parameter_count": 84648086,
+      "selected_step": 8008,
+      "selected_epoch": 1.4004896817068906,
+      "selection_criterion": "minimum validation RMSE",
+      "mode": "classification_based_regression"
+    },
+    "Continuous": {
+      "checkpoint": "checkpoints/2_212m_s0_ts0_continuous.pth",
+      "metadata": "checkpoints/2_212m_s0_ts0_continuous_metadata.json",
+      "normalization_stats": "checkpoints/2_212m_s0_norm_stats.json",
+      "parameter_count": 84342785,
+      "selected_step": 8580,
+      "selected_epoch": 1.5005246589716683,
+      "selection_criterion": "minimum validation RMSE",
+      "mode": "continuous"
+    }
+  },
+  "results": {
+    "validation": {
+      "CLARE": {
+        "n": 325351,
+        "rmse_k": 1773.926713728302,
+        "mae_k": 1238.0980248156661,
+        "bias_k": -83.26903686994308,
+        "r2": 0.5900480906957168,
+        "pearson_r": 0.7692552267801385,
+        "within_10pct": 0.3523702094046122,
+        "soft_target_cross_entropy": 4.10784474312214,
+        "hard_bin_accuracy": 0.047812977369056806,
+        "macro_f1": 0.026249632929732935,
+        "crps_k": 897.0694722776325,
+        "mean_predictive_entropy_nats": 3.632402646668041,
+        "mean_predictive_std_k": 1294.974267022385,
+        "mean_max_bin_probability": 0.06656250647259568,
+        "central_interval_coverage": {
+          "50pct": 0.4162489127127318,
+          "80pct": 0.6806433667024229,
+          "90pct": 0.7957436737554211,
+          "95pct": 0.8709824159138899
+        }
+      },
+      "Continuous": {
+        "n": 325351,
+        "rmse_k": 1774.2390950312554,
+        "mae_k": 1269.392188130779,
+        "bias_k": 72.61346151204776,
+        "r2": 0.5899036962445543,
+        "pearson_r": 0.7695706125921593,
+        "within_10pct": 0.32921060639125127,
+        "mse_k2": 3147924.366337328
+      }
+    },
+    "test-storm": {
+      "CLARE": {
+        "n": 4200,
+        "rmse_k": 1500.659619301231,
+        "mae_k": 1079.6304749116443,
+        "bias_k": -45.64818801153274,
+        "r2": 0.7025825216301667,
+        "pearson_r": 0.8491239699025361,
+        "within_10pct": 0.40523809523809523,
+        "soft_target_cross_entropy": 4.2702362351190475,
+        "hard_bin_accuracy": 0.035238095238095235,
+        "macro_f1": 0.014836077554592042,
+        "crps_k": 822.9589211309524,
+        "mean_predictive_entropy_nats": 3.437413736979167,
+        "mean_predictive_std_k": 1032.4459654017858,
+        "mean_max_bin_probability": 0.07492348375774566,
+        "central_interval_coverage": {
+          "50pct": 0.37476190476190474,
+          "80pct": 0.6261904761904762,
+          "90pct": 0.7347619047619047,
+          "95pct": 0.8178571428571428
+        }
+      },
+      "Continuous": {
+        "n": 4200,
+        "rmse_k": 1352.3164243369217,
+        "mae_k": 933.171831984747,
+        "bias_k": -228.67220865885417,
+        "r2": 0.7584768636024514,
+        "pearson_r": 0.8836471461567822,
+        "within_10pct": 0.47904761904761906,
+        "mse_k2": 1828759.7115313974
+      }
+    }
+  }
+}

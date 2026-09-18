@@ -1,8 +1,34 @@
-wandb/*
+# Experiment tracking
+wandb/
+
+# Model checkpoints
 *.pth
-*.tsv
+# Except the CLARE model and continuous model
+!checkpoints/2_212m_s0_ts0.pth
+!checkpoints/2_212m_s0_ts0_continuous.pth
+
+# Training metadata
+checkpoints/*_best_metadata.json
+checkpoints/*_last_metadata.json
+
+# Datasets
+dataset/processed_dataset/
+dataset/processed_dataset_01_31_storm/
+dataset/processed_dataset_blocksplit_*/
+visualizations/pred_synthetic_heatmap/synthetic_output_dataset.parquet
+
+# Python artifacts
 *.pyc
-dataset/processed_dataset/*
-dataset/processed_dataset_01_31_storm/*
-data/*
-archive/*
+__pycache__/
+.ipynb_checkpoints/
+
+# Virtual environment
+clare_venv/
+
+# Generated archives
+*.zip
+*.tar.gz
+
+# PBS Job scheduler output
+*.o[0-9]*
+*.e[0-9]*

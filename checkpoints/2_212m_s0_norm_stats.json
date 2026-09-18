@@ -1,0 +1,19 @@
+{
+  "generated_utc": "2026-09-18T17:12:31.918830+00:00",
+  "dataset_dir": "dataset/processed_dataset_blocksplit_212m_s0",
+  "train_size": 2927535,
+  "validation_size": 325351,
+  "block_minutes": 212,
+  "split_seed": 0,
+  "source": "freshly recomputed from current training split",
+  "mean": {
+    "AL_index": -127.86624583480642,
+    "SYM_H": -13.901138454541872,
+    "f107_index": 129.35427947345693
+  },
+  "std": {
+    "AL_index": 160.77466706026897,
+    "SYM_H": 22.128649544462657,
+    "f107_index": 54.55494293758699
+  }
+}

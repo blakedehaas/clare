@@ -1,13 +1,72 @@
+"""Deterministic feature transformations shared by CLARE training and evaluation."""
+
 import numpy as np
 
+ALTITUDE_MIN_KM = 1000.0
+ALTITUDE_MAX_KM = 8000.0
+LATITUDE_SCALE_DEG = 90.0
+KP_MIN = 0.0
+KP_MAX = 90.0
+MLT_PERIOD_HOURS = 24.0
+
+
+def _float32(values):
+    return np.asarray(values, dtype=np.float32)
+
+
+def _scale_to_minus_one_one(values, minimum, maximum):
+    values = _float32(values)
+    return (2.0 * (values - minimum) / (maximum - minimum) - 1.0).astype(np.float32)
+
+
+def normalize_altitude(values):
+    return _scale_to_minus_one_one(values, ALTITUDE_MIN_KM, ALTITUDE_MAX_KM)
+
+
+def normalize_latitude(values):
+    return (_float32(values) / LATITUDE_SCALE_DEG).astype(np.float32)
+
+
+def normalize_kp(values):
+    return _scale_to_minus_one_one(values, KP_MIN, KP_MAX)
+
+
 NORMALIZATIONS = {
-    'Altitude': lambda x: (np.array(x, dtype=np.float32) - 4000) / 4000,  # Scale to [-1, 1]
-    'GCLON': lambda x: np.sin(np.deg2rad(np.array(x, dtype=np.float32))),  # Convert longitude to sine
-    'GCLAT': lambda x: np.array(x, dtype=np.float32) / 90,  # Scale latitude to [-1, 1]
-    'ILAT': lambda x: np.array(x, dtype=np.float32) / 90,  # Scale latitude to [-1, 1]
-    'GLAT': lambda x: np.array(x, dtype=np.float32) / 90,  # Scale latitude to [-1, 1]
-    'GMLT': lambda x: np.sin(np.array(x, dtype=np.float32) * np.pi / 12),  # Convert MLT (0-24) to sine
-    'XXLAT': lambda x: np.array(x, dtype=np.float32) / 90,  # Scale latitude to [-1, 1]
-    'XXLON': lambda x: np.sin(np.deg2rad(np.array(x, dtype=np.float32))),  # Convert longitude to sine
-    "Kp_index": lambda x: np.array(x, dtype=np.float32) / 45 - 1,  # Scale Kp index (0-90) to [-1, 1]
+    "Altitude": normalize_altitude,
+    "GCLAT": normalize_latitude,
+    "ILAT": normalize_latitude,
+    "GLAT": normalize_latitude,
+    "XXLAT": normalize_latitude,
+    "Kp_index": normalize_kp,
+}
+
+
+def encode_longitude(values, prefix):
+    radians = np.deg2rad(_float32(values))
+    return {
+        f"{prefix}_sin": np.sin(radians).astype(np.float32),
+        f"{prefix}_cos": np.cos(radians).astype(np.float32),
+    }
+
+
+def encode_gclon(values):
+    return encode_longitude(values, "GCLON")
+
+
+def encode_xxlon(values):
+    return encode_longitude(values, "XXLON")
+
+
+def encode_gmlt(values):
+    radians = _float32(values) * (2.0 * np.pi / MLT_PERIOD_HOURS)
+    return {
+        "GMLT_sin": np.sin(radians).astype(np.float32),
+        "GMLT_cos": np.cos(radians).astype(np.float32),
+    }
+
+
+CIRCULAR_ENCODINGS = {
+    "GCLON": encode_gclon,
+    "XXLON": encode_xxlon,
+    "GMLT": encode_gmlt,
 }
