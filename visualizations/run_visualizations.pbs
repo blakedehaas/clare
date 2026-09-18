@@ -1,0 +1,183 @@
+#!/bin/bash
+#PBS -N clare_figures
+#PBS -A UCUL0008
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64GB
+#PBS -l walltime=06:00:00
+#PBS -q casper
+#PBS -j oe
+#PBS -m abe
+#PBS -M blake.dehaas@lasp.colorado.edu
+
+set -e
+set -o pipefail
+
+PROJECT_ROOT="/glade/campaign/univ/ucul0008/auroral_precipitation_ml/clare"
+VENV_PATH="$PROJECT_ROOT/clare_venv"
+VIS_DIR="$PROJECT_ROOT/visualizations"
+
+cd "$PROJECT_ROOT"
+
+echo "============================================================"
+echo "CLARE visualization generation"
+echo "Job started:  $(date)"
+echo "Host:         $(hostname)"
+echo "Job ID:       $PBS_JOBID"
+echo "============================================================"
+echo ""
+
+module purge
+module load ncarenv/24.12
+module load conda
+module load cuda/12.8.0
+
+if [ ! -f "$VENV_PATH/bin/activate" ]; then
+    echo "[ERROR] Virtual environment not found: $VENV_PATH"
+    exit 1
+fi
+
+source "$VENV_PATH/bin/activate"
+export MPLBACKEND=Agg
+
+echo "[INFO] Python: $(which python)"
+echo "[INFO] CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-}"
+nvidia-smi
+echo ""
+
+REQUIRED_PATHS=(
+    "$PROJECT_ROOT/checkpoints/2_212m_s0_ts0.pth"
+    "$PROJECT_ROOT/checkpoints/2_212m_s0_norm_stats.json"
+    "$PROJECT_ROOT/dataset/processed_dataset_blocksplit_212m_s0/val-blocks"
+    "$PROJECT_ROOT/dataset/processed_dataset_blocksplit_212m_s0/test-storm"
+    "$PROJECT_ROOT/dataset/input_dataset/omni_kp_index.lst"
+    "$PROJECT_ROOT/dataset/input_dataset/omni_al_index_symh"
+    "$PROJECT_ROOT/dataset/input_dataset/omni_f107"
+)
+
+for path in "${REQUIRED_PATHS[@]}"; do
+    if [ ! -e "$path" ]; then
+        echo "[ERROR] Required path not found: $path"
+        exit 1
+    fi
+done
+
+python - <<'PY'
+import importlib.util
+import torch
+
+required = [
+    "datasets",
+    "matplotlib",
+    "numpy",
+    "pandas",
+    "pyarrow",
+    "spacepy",
+    "torch",
+]
+
+missing = [
+    name
+    for name in required
+    if importlib.util.find_spec(name) is None
+]
+if missing:
+    raise SystemExit(
+        f"[ERROR] Missing Python package(s): {', '.join(missing)}"
+    )
+
+if not torch.cuda.is_available():
+    raise SystemExit(
+        "[ERROR] PyTorch cannot see the allocated CUDA GPU."
+    )
+
+print(f"[INFO] GPU: {torch.cuda.get_device_name(0)}")
+print("[INFO] Dependency preflight passed.")
+PY
+
+run_step() {
+    local label="$1"
+    shift
+
+    echo ""
+    echo "============================================================"
+    echo "[INFO] $label"
+    echo "[INFO] Started: $(date)"
+    echo "[INFO] Command: $*"
+    echo "============================================================"
+
+    "$@"
+
+    echo "[INFO] Finished: $(date)"
+}
+
+run_step \
+    "Observed-vs-predicted correlation figures" \
+    python "$VIS_DIR/pred_vs_obs_correlation/pred_vs_obs_correlation.py"
+
+run_step \
+    "Validation residual figure" \
+    python "$VIS_DIR/pred_vs_obs_residual/pred_vs_obs_residual.py"
+
+run_step \
+    "Held-out storm observed-vs-predicted line figure" \
+    python "$VIS_DIR/pred_vs_obs_line/pred_vs_obs_line.py"
+
+run_step \
+    "Held-out storm observed-vs-predicted context figure" \
+    python "$VIS_DIR/pred_vs_obs_dotplot/pred_vs_obs_dotplot.py"
+
+run_step \
+    "Held-out storm altitude-time prediction figure" \
+    python "$VIS_DIR/pred_dotplot/pred_dotplot.py"
+
+run_step \
+    "Shared synthetic heatmap input dataset" \
+    python "$VIS_DIR/pred_synthetic_heatmap/generate_synthetic_data.py"
+
+SYNTHETIC_DATA="$VIS_DIR/pred_synthetic_heatmap/synthetic_output_dataset.parquet"
+if [ ! -s "$SYNTHETIC_DATA" ]; then
+    echo "[ERROR] Synthetic dataset missing or empty: $SYNTHETIC_DATA"
+    exit 1
+fi
+
+run_step \
+    "Synthetic Millstone Hill figure: L=3.0" \
+    python "$VIS_DIR/pred_synthetic_heatmap/pred_synthetic_heatmap.py" --l-shell 3.0
+
+run_step \
+    "Synthetic Millstone Hill figure: L=3.5" \
+    python "$VIS_DIR/pred_synthetic_heatmap/pred_synthetic_heatmap.py" --l-shell 3.5
+
+run_step \
+    "Synthetic Millstone Hill figure: L=4.0" \
+    python "$VIS_DIR/pred_synthetic_heatmap/pred_synthetic_heatmap.py" --l-shell 4.0
+
+EXPECTED_OUTPUTS=(
+    "$VIS_DIR/pred_vs_obs_correlation/validation_pred_vs_obs_correlation.png"
+    "$VIS_DIR/pred_vs_obs_correlation/test_storm_pred_vs_obs_correlation.png"
+    "$VIS_DIR/pred_vs_obs_residual/validation_pred_vs_obs_residual.png"
+    "$VIS_DIR/pred_vs_obs_line/pred_vs_obs_line.png"
+    "$VIS_DIR/pred_vs_obs_dotplot/pred_vs_obs_dotplot.png"
+    "$VIS_DIR/pred_dotplot/pred_dotplot.png"
+    "$VIS_DIR/pred_synthetic_heatmap/L3.0_MillstoneHill_synthetic_visualization.png"
+    "$VIS_DIR/pred_synthetic_heatmap/L3.5_MillstoneHill_synthetic_visualization.png"
+    "$VIS_DIR/pred_synthetic_heatmap/L4.0_MillstoneHill_synthetic_visualization.png"
+)
+
+echo ""
+echo "============================================================"
+echo "[INFO] Verifying generated figures"
+echo "============================================================"
+
+for output in "${EXPECTED_OUTPUTS[@]}"; do
+    if [ ! -s "$output" ]; then
+        echo "[ERROR] Expected figure missing or empty: $output"
+        exit 1
+    fi
+    echo "[OK] $output"
+done
+
+echo ""
+echo "============================================================"
+echo "[SUCCESS] All canonical visualization figures generated."
+echo "Job finished: $(date)"
+echo "============================================================"
